@@ -660,7 +660,11 @@ with st.sidebar:
     # 逻辑2：仅上传数据文件 → 正常处理（不跳转）
     elif uploaded_file is not None:
         if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file, encoding='gbk')
+            try:
+                df = pd.read_csv(uploaded_file, encoding='utf-8')
+            except UnicodeDecodeError:
+                uploaded_file.seek(0)
+                df = pd.read_csv(uploaded_file, encoding='gbk')
         else:
             df = pd.read_excel(uploaded_file)
         # 只保存原始数据，不编码
