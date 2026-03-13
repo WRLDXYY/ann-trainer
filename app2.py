@@ -3,7 +3,6 @@ import pandas as pd  # 读数据、清洗、整理表格
 import io
 import numpy as np  # 对数组做快速数学计算
 import tensorflow as tf
-import os
 import tempfile
 import shutil
 import time
@@ -13,7 +12,14 @@ from sklearn.model_selection import train_test_split
 import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 import matplotlib.pyplot as plt
-plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']
+import matplotlib.font_manager as fm
+import os
+font_path = os.path.join(os.path.dirname(__file__), 'simhei.ttf')
+if os.path.exists(font_path):
+    fm.fontManager.addfont(font_path)
+    plt.rcParams['font.sans-serif'] = [fm.FontProperties(fname=font_path).get_name(), 'DejaVu Sans']
+else:
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 from scipy import stats
 from imblearn.over_sampling import SMOTE, ADASYN
@@ -2360,5 +2366,6 @@ elif st.session_state.step == 4:
         if st.button("返回数据清洗", use_container_width=True):
             st.session_state.step = 2
             st.rerun()
+
 
 
