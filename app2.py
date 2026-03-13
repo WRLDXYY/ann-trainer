@@ -1670,7 +1670,8 @@ elif st.session_state.step == 3:
             st.write("**训练参数**")
             epochs = st.slider("训练轮次", 10, 500, 50, key="slider_epochs")
             batch_size = st.slider("批次大小", 8, 128, 32, key="slider_batch")
-            learning_rate = st.selectbox("学习率", [0.1, 0.01, 0.001, 0.0005, 0.0001, 0.00001], index=2, key="select_lr")
+            learning_rate = st.selectbox("学习率", [0.1, 0.05, 0.01, 0.005, 0.001, 0.0005, 0.0001, 0.00005, 0.00001], 
+                                         index=2, key="select_lr")
 
         # 4. 数据划分
         st.markdown("### 3. 数据划分")
@@ -2366,6 +2367,4 @@ elif st.session_state.step == 4:
         if st.button("返回数据清洗", use_container_width=True):
             st.session_state.step = 2
             st.rerun()
-
-
 
