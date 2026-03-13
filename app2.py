@@ -1656,22 +1656,25 @@ elif st.session_state.step == 3:
         st.markdown("---")
 
         # 3. ANN模型参数配置
+        # 3. ANN模型参数配置
         st.markdown("### 2. ANN模型配置")
         col1, col2 = st.columns(2)
         with col1:
             # 网络结构
             st.write("**网络结构**")
-            hidden_layers = st.slider("隐藏层层数", 1, 5, 2, key="slider_hidden_layers")
-            neurons_per_layer = st.slider("每层神经元数", 8, 256, 64, key="slider_neurons")
+            hidden_layers = st.number_input("隐藏层层数", min_value=1, max_value=10, value=2, step=1,
+                                            key="num_hidden_layers")
+            neurons_per_layer = st.number_input("每层神经元数", min_value=4, max_value=512, value=64, step=8,
+                                                key="num_neurons")
             activation = st.selectbox("激活函数", ["relu", "sigmoid", "tanh"], key="select_activation")
 
         with col2:
             # 训练参数
             st.write("**训练参数**")
-            epochs = st.slider("训练轮次", 10, 500, 50, key="slider_epochs")
-            batch_size = st.slider("批次大小", 8, 128, 32, key="slider_batch")
-            learning_rate = st.selectbox("学习率", [0.1, 0.05, 0.01, 0.005, 0.001, 0.0005, 0.0001, 0.00005, 0.00001], 
-                                         index=2, key="select_lr")
+            epochs = st.number_input("训练轮次", min_value=1, max_value=1000, value=50, step=10, key="num_epochs")
+            batch_size = st.number_input("批次大小", min_value=1, max_value=256, value=32, step=4, key="num_batch_size")
+            learning_rate = st.number_input("学习率", min_value=0.00001, max_value=1.0, value=0.001, format="%.5f",
+                                            key="num_learning_rate")
 
         # 4. 数据划分
         st.markdown("### 3. 数据划分")
