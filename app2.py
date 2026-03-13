@@ -13,7 +13,7 @@ from sklearn.model_selection import train_test_split
 import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 import matplotlib.pyplot as plt
-plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'SimHei', 'Microsoft YaHei', 'DejaVu Sans']
+plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 from scipy import stats
 from imblearn.over_sampling import SMOTE, ADASYN
@@ -2360,4 +2360,5 @@ elif st.session_state.step == 4:
         if st.button("返回数据清洗", use_container_width=True):
             st.session_state.step = 2
             st.rerun()
+
 
