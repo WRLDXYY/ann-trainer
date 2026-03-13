@@ -9,3 +9,5 @@ scipy
 imbalanced-learn
 openai
 requests
+chardet
+openpyxl  
