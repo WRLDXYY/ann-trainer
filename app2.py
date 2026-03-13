@@ -2338,14 +2338,19 @@ elif st.session_state.step == 4:
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             if st.button("← 返回配置", use_container_width=True, key="back_to_config"):
+                st.session_state.show_prediction_results = False
+                st.session_state.prediction_result = None
+                st.session_state.manual_pred_result = None
                 st.session_state.step = 3
                 st.rerun()
         with col2:
             if st.button("🔄 重新训练", use_container_width=True, key="retrain_model"):
+                st.session_state.show_prediction_results = False
+                st.session_state.prediction_result = None
+                st.session_state.manual_pred_result = None
+
                 keys_to_remove = ['model', 'scaler', 'history', 'X_test', 'y_test',
-                                  'label_encoder', 'is_classification', 'num_classes',
-                                  'show_prediction_results', 'prediction_result',
-                                  'manual_pred_result', 'uploaded_model', 'uploaded_scaler', 'uploaded_config']
+                                  'label_encoder', 'is_classification', 'num_classes']
                 for key in keys_to_remove:
                     if key in st.session_state:
                         del st.session_state[key]
