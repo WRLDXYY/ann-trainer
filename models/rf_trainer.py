@@ -515,30 +515,17 @@ def predict_rf():
         col1, col2 = st.columns(2)
         with col1:
             try:
-                # 创建打包数据（随机森林不需要scaler）
-                model_package = {
-                    'model': st.session_state.rf_model,
-                    'scaler': None,  # 随机森林不需要标准化
-                    'config': config,
-                    'model_type': 'rf',
-                    'feature_names': feature,
-                    'num_classes': num_classes if is_classification else None,
-                    'label_encoder_classes': label_encoder.classes_.tolist() if label_encoder else None
-                }
-
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as tmp_file:
-                    joblib.dump(model_package, tmp_file.name)
+                    joblib.dump(st.session_state.rf_model, tmp_file.name)
                     tmp_file_path = tmp_file.name
                     with open(tmp_file_path, 'rb') as f:
                         model_bytes = f.read()
-
                 if os.path.exists(tmp_file_path):
                     os.unlink(tmp_file_path)
-
                 st.download_button(
-                    label="📥 下载完整模型包 (.pkl)",
+                    label="📥 下载模型文件 (.pkl)",
                     data=model_bytes,
-                    file_name=f"rf_model_package_{time.strftime('%Y%m%d_%H%M%S')}.pkl",
+                    file_name=f"rf_model_{time.strftime('%Y%m%d_%H%M%S')}.pkl",
                     mime="application/octet-stream",
                     use_container_width=True
                 )
@@ -546,7 +533,17 @@ def predict_rf():
                 st.error(f"❌ 模型保存失败：{str(e)}")
 
         with col2:
-            config_json = json.dumps(config, indent=2, ensure_ascii=False)
+            # 创建一个可序列化的配置副本
+            serializable_config = {}
+            for key, value in config.items():
+                if hasattr(value, 'tolist'):  # 如果是 numpy 数组
+                    serializable_config[key] = value.tolist()
+                elif hasattr(value, 'item'):  # 如果是 numpy 数值
+                    serializable_config[key] = value.item()
+                else:
+                    serializable_config[key] = value
+
+            config_json = json.dumps(serializable_config, indent=2, ensure_ascii=False)
             st.download_button(
                 label="📄 下载配置 (.json)",
                 data=config_json,
