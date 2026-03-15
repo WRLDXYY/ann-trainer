@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LogisticRegression
+import lightgbm as lgb
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score, mean_absolute_error, classification_report, confusion_matrix
 from sklearn.preprocessing import StandardScaler
@@ -13,13 +13,14 @@ import tempfile
 import os
 import joblib
 import warnings
+from openai import OpenAI
 import re
 warnings.filterwarnings('ignore')
 
 
-# ========== AI调用函数（为逻辑回归定制） ==========
-def get_lr_ai_advice(data):
-    """调用DeepSeek API获取逻辑回归模型评价和优化建议"""
+# ========== AI调用函数（为LightGBM定制） ==========
+def get_lgb_ai_advice(data):
+    """调用DeepSeek API获取LightGBM模型评价和优化建议"""
     try:
         from openai import OpenAI
         client = OpenAI(
@@ -36,7 +37,7 @@ def get_lr_ai_advice(data):
             else:
                 baseline_text = "请根据问题类型合理评价"
         else:
-            baseline_text = "这是回归问题，逻辑回归主要用于分类"
+            baseline_text = "这是回归问题，请用MAE等指标评价"
 
         # 构建当前对话的prompt
         current_prompt = f"""
@@ -49,10 +50,11 @@ def get_lr_ai_advice(data):
 - {baseline_text}
 
 当前配置：
-- C值（正则化强度）: {data['当前配置']['C']}
-- 正则化类型: {data['当前配置']['penalty']}
-- 求解器: {data['当前配置']['solver']}
-- 最大迭代次数: {data['当前配置']['max_iter']}
+- 提升迭代次数: {data['当前配置']['n_estimators']}
+- 学习率: {data['当前配置']['learning_rate']}
+- 最大深度: {data['当前配置']['max_depth']}
+- 叶子节点数: {data['当前配置']['num_leaves']}
+- 最小叶子样本数: {data['当前配置']['min_child_samples']}
 - 测试集比例: {data['当前配置']['test_size']}%
 
 当前效果：
@@ -62,12 +64,15 @@ def get_lr_ai_advice(data):
 {st.session_state.ai_history[-1] if st.session_state.ai_history else '这是第一次咨询，还没有历史建议。'}
 
 【重要要求】
-1. 逻辑回归参数简单，建议根据样本量调整C值：
-   - 小样本 (<500)：C=1.0 或更大（少正则化）
-   - 中等样本 (500-2000)：C=0.5-1.0
-   - 大样本 (>2000)：C=0.1-0.5（强正则化防止过拟合）
-2. 如果准确率低，可以尝试减小C值（加强正则化）
-3. 如果训练时间长，可以减小max_iter或换求解器
+1. LightGBM参数较多，根据样本量给出建议：
+   - 小样本 (<1000)：减少迭代次数，降低复杂度
+   - 中等样本 (1000-5000)：默认参数即可
+   - 大样本 (>5000)：可以增加迭代次数和叶子节点数
+2. 学习率通常与迭代次数配合：learning_rate 越小，n_estimators 需要越大
+3. 如果过拟合（训练集准确率高，测试集低）：
+   - 减小 max_depth 或 num_leaves
+   - 增大 min_child_samples
+   - 增大 learning_rate 同时减小 n_estimators
 
 如果是第二次或更多次咨询，请参考之前给的建议，告诉用户这次调整后的效果如何。
 
@@ -75,18 +80,21 @@ def get_lr_ai_advice(data):
 {{
     "评价": "结合基准和样本量评价当前模型",
     "优化建议": {{
-        "C": 建议值,
-        "penalty": "建议值",
-        "solver": "建议值",
-        "max_iter": 建议值,
+        "n_estimators": 建议值,
+        "learning_rate": 建议值,
+        "max_depth": 建议值,
+        "num_leaves": 建议值,
+        "min_child_samples": 建议值,
+        "subsample": 建议值（0.5-1.0之间）,
+        "colsample_bytree": 建议值（0.5-1.0之间）,
+        "reg_alpha": 建议值,
+        "reg_lambda": 建议值,
+        "min_split_gain": 建议值,
         "test_size": 建议值（整数百分比）
-    }},
+        }},
+    "注意：必须返回所有参数，即使保持默认也要写出来"
     "预期效果": "说明优化后可能达到的效果"
 }}
-【约束条件】
-- 当前可用求解器: {data['约束条件']['可用求解器']}
-- 是否多分类: {'是' if data['约束条件']['是否多分类'] else '否'}
-- 请只从可用求解器中选择，不要建议不可用的求解器
 """
 
         # 添加用户消息到历史
@@ -117,13 +125,14 @@ def get_lr_ai_advice(data):
             return {
                 "评价": "模型表现不理想，建议调整参数",
                 "优化建议": {
-                    "C": 1.0,
-                    "penalty": "l2",
-                    "solver": "lbfgs",
-                    "max_iter": 100,
+                    "n_estimators": 100,
+                    "learning_rate": 0.1,
+                    "max_depth": -1,
+                    "num_leaves": 31,
+                    "min_child_samples": 20,
                     "test_size": 20
                 },
-                "预期效果": "优化后准确率预计可提升5-15%"
+                "预期效果": "优化后准确率预计可提升10-20%"
             }
 
     except Exception as e:
@@ -131,20 +140,21 @@ def get_lr_ai_advice(data):
         return {
             "评价": f"AI服务暂时不可用，使用默认建议",
             "优化建议": {
-                "C": 1.0,
-                "penalty": "l2",
-                "solver": "lbfgs",
-                "max_iter": 100,
+                "n_estimators": 100,
+                "learning_rate": 0.1,
+                "max_depth": -1,
+                "num_leaves": 31,
+                "min_child_samples": 20,
                 "test_size": 20
             },
-            "预期效果": "优化后准确率预计可提升5-15%"
+            "预期效果": "优化后准确率预计可提升10-20%"
         }
 
 
-# ========== 逻辑回归训练函数 ==========
-def train_lr():
-    """逻辑回归训练主函数"""
-    st.subheader("📈 逻辑回归训练")
+# ========== LightGBM训练函数 ==========
+def train_lgb():
+    """LightGBM训练主函数"""
+    st.subheader("⚡ LightGBM训练")
 
     df = st.session_state.processed_df
     target = df.columns[-1]
@@ -152,89 +162,138 @@ def train_lr():
     label_encoders = st.session_state.label_encoders
     is_classification = target in label_encoders
 
+    if is_classification:
+        le = label_encoders[target]
+        num_classes = len(le.classes_)
+    else:
+        num_classes = None
+
     # ===== 检查是否有AI建议的参数 =====
     if 'ai_suggested_params' in st.session_state:
         suggested = st.session_state.ai_suggested_params
         st.success("✨ 已应用AI建议的参数，你可以直接点击训练")
 
-        default_C = suggested.get('C', 1.0)
-        default_penalty = suggested.get('penalty', 'l2')
-        default_solver = suggested.get('solver', 'lbfgs')
-        default_max_iter = suggested.get('max_iter', 100)
+        # 读取建议值，如果没有则用默认值
+        default_n_estimators = suggested.get('n_estimators', 100)
+        default_learning_rate = suggested.get('learning_rate', 0.1)
+        default_max_depth = suggested.get('max_depth', -1)
+        default_num_leaves = suggested.get('num_leaves', 31)
+        default_min_child_samples = suggested.get('min_child_samples', 20)
+        default_subsample = suggested.get('subsample', 1.0)
+        default_colsample = suggested.get('colsample_bytree', 1.0)
+        default_reg_alpha = suggested.get('reg_alpha', 0.0)
+        default_reg_lambda = suggested.get('reg_lambda', 0.0)
+        default_min_split_gain = suggested.get('min_split_gain', 0.0)
         default_test_size = suggested.get('test_size', 20)
+
     else:
-        default_C = 1.0
-        default_penalty = 'l2'
-        default_solver = 'lbfgs'
-        default_max_iter = 100
+        default_n_estimators = 100
+        default_learning_rate = 0.1
+        default_max_depth = -1
+        default_num_leaves = 31
+        default_min_child_samples = 20
+        default_subsample = 1.0
+        default_colsample = 1.0
+        default_reg_alpha = 0.0
+        default_reg_lambda = 0.0
+        default_min_split_gain = 0.0
         default_test_size = 20
-
-    if not is_classification:
-        st.warning("⚠️ 逻辑回归主要用于分类问题，回归问题请使用其他模型")
-        if st.button("返回选择"):
-            st.session_state.step = 1
-            st.rerun()
-        return
-
-    le = label_encoders[target]
-    num_classes = len(le.classes_)
-
     # 显示数据信息
     st.markdown("### 1. 数据识别")
     st.info(f"系统识别到：{len(feature)}个特征列，1个标签列")
     st.write(f"**标签列:** {target}")
-    st.write(f"**问题类型:** 分类")
-    st.write(f"**类别数:** {num_classes}")
+    st.write(f"**问题类型:** {'分类' if is_classification else '回归'}")
+    if is_classification:
+        st.write(f"**类别数:** {num_classes}")
 
     n_samples = len(df)
-    if n_samples < 500:
-        st.success(f"✅ 当前样本量 {n_samples}，逻辑回归是理想选择")
+    if n_samples > 2000:
+        st.success(f"✅ 当前样本量 {n_samples}，LightGBM能发挥优势")
+    else:
+        st.info(f"ℹ️ 当前样本量 {n_samples}，LightGBM可能不如随机森林稳定")
 
     # 参数配置
-    st.markdown("### 2. 逻辑回归参数配置")
-
+    st.markdown("### 2. LightGBM参数配置")
     col1, col2 = st.columns(2)
 
     with col1:
-        st.write("**正则化参数**")
-        C = st.number_input("C值（正则化强度）", min_value=0.01, max_value=10.0,
-                            value=default_C, step=0.1, key="lr_C")
+        st.write("**核心参数**")
+        n_estimators = st.number_input("提升迭代次数",
+                                       min_value=10, max_value=1000,
+                                       value=default_n_estimators,  # 使用AI建议的值
+                                       step=10, key="lgb_n_estimators")
 
-        penalty = st.selectbox("正则化类型", ["l2", "l1", "elasticnet", "none"],
-                               index=["l2", "l1", "elasticnet", "none"].index(default_penalty), key="lr_penalty")
+        learning_rate = st.number_input("学习率",
+                                        min_value=0.01, max_value=1.0,
+                                        value=default_learning_rate,  # 使用AI建议的值
+                                        step=0.05, key="lgb_learning_rate")
+
+        max_depth = st.number_input("最大深度",
+                                    min_value=-1, max_value=50,
+                                    value=default_max_depth,  # 使用AI建议的值
+                                    step=1, key="lgb_max_depth")
 
     with col2:
-        st.write("**求解器参数**")
-        # 根据类别数动态调整求解器选项
-        if num_classes > 2:
-            solver_options = ["lbfgs", "newton-cg", "sag", "saga"]
-            default_solver = default_solver if default_solver in solver_options else "lbfgs"
-        else:
-            solver_options = ["lbfgs", "liblinear", "newton-cg", "sag", "saga"]
-            default_solver = default_solver if default_solver in solver_options else "lbfgs"
+        st.write("**叶子参数**")
+        num_leaves = st.number_input("叶子节点数",
+                                     min_value=2, max_value=255,
+                                     value=default_num_leaves,  # 使用AI建议的值
+                                     step=5, key="lgb_num_leaves")
 
-        solver = st.selectbox("求解器", solver_options,
-                              index=solver_options.index(default_solver) if default_solver in solver_options else 0,
-                              key="lr_solver")
+        min_child_samples = st.number_input("最小叶子样本数",
+                                            min_value=1, max_value=100,
+                                            value=default_min_child_samples,  # 使用AI建议的值
+                                            step=5, key="lgb_min_child_samples")
 
-        max_iter = st.number_input("最大迭代次数", min_value=100, max_value=1000,
-                                   value=default_max_iter, step=50, key="lr_max_iter")
+        subsample = st.number_input("样本采样比例",
+                                    min_value=0.1, max_value=1.0,
+                                    value=default_subsample,  # 使用AI建议的值
+                                    step=0.1, key="lgb_subsample")
+
+    # 高级参数（折叠）
+    with st.expander("高级参数"):
+        col1, col2 = st.columns(2)
+        with col1:
+            colsample_bytree = st.number_input("特征采样比例",
+                                               min_value=0.1, max_value=1.0,
+                                               value=default_colsample,  # 使用AI建议的值
+                                               step=0.1, key="lgb_colsample")
+            reg_alpha = st.number_input("L1正则化",
+                                        min_value=0.0, max_value=10.0,
+                                        value=default_reg_alpha,  # 使用AI建议的值
+                                        step=0.1, key="lgb_reg_alpha")
+        with col2:
+            reg_lambda = st.number_input("L2正则化",
+                                         min_value=0.0, max_value=10.0,
+                                         value=default_reg_lambda,  # 使用AI建议的值
+                                         step=0.1, key="lgb_reg_lambda")
+            min_split_gain = st.number_input("最小分裂增益",
+                                             min_value=0.0, max_value=1.0,
+                                             value=default_min_split_gain,  # 使用AI建议的值
+                                             step=0.1, key="lgb_min_split_gain")
 
     # 数据划分
     st.markdown("### 3. 数据划分")
-    test_size = st.slider("测试集比例 (%)", 10, 40, value=int(default_test_size), key="lr_test_size")
+    test_size = st.slider("测试集比例 (%)", 10, 40,
+                          value=int(default_test_size),
+                          key="lgb_test_size")
 
     X = df[feature].values
     y = df[target].values
 
+    # 分类问题需要处理标签
+    if is_classification and num_classes > 2:
+        # LightGBM可以直接处理多分类，不需要one-hot
+        pass
+
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size / 100, random_state=42,
-        stratify=y
+        stratify=y if is_classification else None
     )
 
     # 可选：标准化
-    use_scaler = st.checkbox("使用标准化", value=True,
-                             help="逻辑回归对特征尺度敏感，建议标准化")
+    use_scaler = st.checkbox("使用标准化", value=False,
+                             help="树模型对尺度不敏感，通常不需要标准化")
 
     # 显示样本数
     col1, col2, col3 = st.columns(3)
@@ -248,55 +307,109 @@ def train_lr():
     st.markdown("---")
 
     # 训练按钮
-    if st.button("🚀 开始训练逻辑回归", type="primary", use_container_width=True, key="lr_train_btn"):
+    if st.button("🚀 开始训练LightGBM", type="primary", use_container_width=True, key="lgb_train_btn"):
 
         # 保存配置
-        st.session_state.lr_config = {
+        st.session_state.lgb_config = {
             'target': target,
             'feature': feature,
-            'C': C,
-            'penalty': penalty,
-            'solver': solver,
-            'max_iter': max_iter,
+            'n_estimators': n_estimators,
+            'learning_rate': learning_rate,
+            'max_depth': max_depth if max_depth != -1 else -1,
+            'num_leaves': num_leaves,
+            'min_child_samples': min_child_samples,
+            'subsample': subsample,
+            'colsample_bytree': colsample_bytree,
+            'reg_alpha': reg_alpha,
+            'reg_lambda': reg_lambda,
+            'min_split_gain': min_split_gain,
             'test_size': test_size / 100,
             'use_scaler': use_scaler
         }
-        st.session_state.is_classification = True
+        st.session_state.is_classification = is_classification
         st.session_state.num_classes = num_classes
-        st.session_state.label_encoder = le
+        st.session_state.label_encoder = le if is_classification else None
 
         # 数据预处理
         if use_scaler:
             scaler = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_train)
             X_test_scaled = scaler.transform(X_test)
-            st.session_state.lr_scaler = scaler
+            st.session_state.lgb_scaler = scaler
         else:
             X_train_scaled = X_train
             X_test_scaled = X_test
+
+        # ✅ 添加 Class Weight 处理
+        class_weight = None
+        if is_classification and st.session_state.user_choices.get('balance') == 'class_weight':
+            try:
+                # 计算样本权重
+                from sklearn.utils.class_weight import compute_class_weight
+                classes = np.unique(y_train)
+                weights = compute_class_weight('balanced', classes=classes, y=y_train)
+                class_weight = dict(zip(classes, weights))
+                st.info(f"📊 应用Class Weight：{class_weight}")
+            except Exception as e:
+                st.warning(f"Class Weight计算失败：{str(e)}")
 
         # 创建模型
         with st.spinner("模型训练中..."):
             start_time = time.time()
 
-            # 多分类自动处理
-            if num_classes > 2:
-                multi_class = 'multinomial'
+            # 设置目标函数
+            if is_classification:
+                if num_classes == 2:
+                    objective = 'binary'
+                    metric = 'binary_logloss'
+                else:
+                    objective = 'multiclass'
+                    metric = 'multi_logloss'
             else:
-                multi_class = 'ovr'
+                objective = 'regression'
+                metric = 'l2'
 
-            model = LogisticRegression(
-                C=C,
-                penalty=penalty,
-                solver=solver,
-                max_iter=max_iter,
-                multi_class=multi_class,
+            model = lgb.LGBMClassifier(
+                n_estimators=int(n_estimators),
+                learning_rate=float(learning_rate),
+                max_depth=int(max_depth) if max_depth != -1 else -1,
+                num_leaves=int(num_leaves),
+                min_child_samples=int(min_child_samples),
+                subsample=float(subsample),
+                colsample_bytree=float(colsample_bytree),
+                reg_alpha=float(reg_alpha),
+                reg_lambda=float(reg_lambda),
+                min_split_gain=float(min_split_gain),
+                objective=objective,
+                metric=metric,
+                class_weight=class_weight,  # ✅ 添加 class_weight 参数
                 random_state=42,
-                n_jobs=-1
+                n_jobs=-1,
+                verbose=-1
+            ) if is_classification else lgb.LGBMRegressor(
+                n_estimators=int(n_estimators),
+                learning_rate=float(learning_rate),
+                max_depth=int(max_depth) if max_depth != -1 else -1,
+                num_leaves=int(num_leaves),
+                min_child_samples=int(min_child_samples),
+                subsample=float(subsample),
+                colsample_bytree=float(colsample_bytree),
+                reg_alpha=float(reg_alpha),
+                reg_lambda=float(reg_lambda),
+                min_split_gain=float(min_split_gain),
+                objective=objective,
+                metric=metric,
+                random_state=42,
+                n_jobs=-1,
+                verbose=-1
             )
 
             # 训练
-            model.fit(X_train_scaled, y_train)
+            model.fit(X_train_scaled, y_train,
+                      eval_set=[(X_test_scaled, y_test)],
+                      eval_metric=metric if is_classification else 'l2',
+                      callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)])
+
             train_time = time.time() - start_time
 
             # 预测
@@ -304,43 +417,55 @@ def train_lr():
             y_pred_test = model.predict(X_test_scaled)
 
             # 评估
-            train_score = accuracy_score(y_train, y_pred_train)
-            test_score = accuracy_score(y_test, y_pred_test)
-
-            # 特征重要性（系数）
-            if num_classes == 2:
-                coefficients = dict(zip(feature, model.coef_[0]))
+            if is_classification:
+                train_score = accuracy_score(y_train, y_pred_train)
+                test_score = accuracy_score(y_test, y_pred_test)
+                metric_name = "准确率"
             else:
-                coefficients = {f'类别{i}': dict(zip(feature, model.coef_[i]))
-                                for i in range(num_classes)}
+                train_score = mean_absolute_error(y_train, y_pred_train)
+                test_score = mean_absolute_error(y_test, y_pred_test)
+                metric_name = "MAE"
+
+            # 特征重要性
+            feature_importance = dict(zip(feature, model.feature_importances_))
+
+            # 修复2: 保存最佳迭代次数
+            best_iteration = None
+            if hasattr(model, 'booster_') and hasattr(model.booster_, 'best_iteration'):
+                best_iteration = model.booster_.best_iteration
+            elif hasattr(model, 'best_iteration_'):
+                best_iteration = model.best_iteration_
+            else:
+                best_iteration = n_estimators
 
             # 保存结果
-            st.session_state.lr_model = model
-            st.session_state.lr_train_score = train_score
-            st.session_state.lr_test_score = test_score
-            st.session_state.lr_train_time = train_time
-            st.session_state.lr_coefficients = coefficients
-            st.session_state.lr_X_test = X_test_scaled
-            st.session_state.lr_y_test = y_test
-            st.session_state.lr_y_pred_test = y_pred_test
+            st.session_state.lgb_model = model
+            st.session_state.lgb_train_score = train_score
+            st.session_state.lgb_test_score = test_score
+            st.session_state.lgb_train_time = train_time
+            st.session_state.lgb_feature_importance = feature_importance
+            st.session_state.lgb_X_test = X_test_scaled
+            st.session_state.lgb_y_test = y_test
+            st.session_state.lgb_y_pred_test = y_pred_test
+            st.session_state.lgb_best_iteration = best_iteration
 
-            st.success(f"✅ 模型训练完成！ 训练时间: {train_time:.2f}秒")
+            st.success(f"✅ 模型训练完成！ 训练时间: {train_time:.2f}秒 最佳迭代次数: {best_iteration}")
             st.session_state.step = 4
             st.rerun()
 
     # 返回按钮
-    if st.button("← 返回数据清洗", key="lr_back_clean"):
+    if st.button("← 返回数据清洗", key="lgb_back_clean"):
         st.session_state.step = 2
         st.rerun()
 
 
-# ========== 逻辑回归预测函数 ==========
-def predict_lr():
-    """逻辑回归预测函数"""
-    st.subheader("🔮 逻辑回归预测")
-    if 'lr_predict_counter' not in st.session_state:
-        st.session_state.lr_predict_counter = 0
-    current_counter = st.session_state.lr_predict_counter
+# ========== LightGBM预测函数 ==========
+def predict_lgb():
+    """LightGBM预测函数"""
+    st.subheader("🔮 LightGBM预测")
+    if 'lgb_predict_counter' not in st.session_state:
+        st.session_state.lgb_predict_counter = 0
+    current_counter = st.session_state.lgb_predict_counter
 
     # 判断模型来源：训练得到的还是上传的
     model = None
@@ -349,13 +474,13 @@ def predict_lr():
     scaler = None
 
     # 情况1：通过训练流程得到的模型（有完整配置）
-    if 'lr_model' in st.session_state and st.session_state.lr_model is not None:
-        model = st.session_state.lr_model
-        if 'lr_config' in st.session_state and st.session_state.lr_config is not None:
-            config = st.session_state.lr_config
+    if 'lgb_model' in st.session_state and st.session_state.lgb_model is not None:
+        model = st.session_state.lgb_model
+        if 'lgb_config' in st.session_state and st.session_state.lgb_config is not None:
+            config = st.session_state.lgb_config
             feature = config['feature']
-            # ✅ 修改：优先使用 lr_scaler
-            scaler = st.session_state.get('lr_scaler', None)
+            # ✅ 修改：优先使用 lgb_scaler
+            scaler = st.session_state.get('lgb_scaler', None)
             st.success("✅ 使用训练好的模型进行预测")
         else:
             st.warning("⚠️ 模型缺少训练配置信息")
@@ -370,16 +495,16 @@ def predict_lr():
                 else:
                     n_features = 6
                 feature = [f"特征_{i + 1}" for i in range(n_features)]
-            scaler = st.session_state.get('lr_scaler', None)
+            scaler = st.session_state.get('lgb_scaler', None)
 
     # 情况2：通过上传得到的模型
     elif 'uploaded_model' in st.session_state and st.session_state.uploaded_model is not None:
-        if st.session_state.get('uploaded_model_type') == 'lr':
+        if st.session_state.get('uploaded_model_type') == 'lgb':
             model = st.session_state.uploaded_model
-            st.info("📌 使用上传的逻辑回归模型进行预测")
+            st.info("📌 使用上传的LightGBM模型进行预测")
 
             # ✅ 修改：从上传的模型获取scaler
-            scaler = st.session_state.get('lr_scaler', st.session_state.get('uploaded_scaler', None))
+            scaler = st.session_state.get('lgb_scaler', st.session_state.get('uploaded_scaler', None))
 
             # 尝试从原始数据获取特征名
             if st.session_state.df is not None:
@@ -395,7 +520,7 @@ def predict_lr():
                     n_features = 6
                 feature = [f"特征_{i + 1}" for i in range(n_features)]
         else:
-            st.warning("请先训练模型或上传逻辑回归模型文件")
+            st.warning("请先训练模型或上传LightGBM模型文件")
             if st.button("返回训练"):
                 st.session_state.step = 3
                 st.rerun()
@@ -411,72 +536,56 @@ def predict_lr():
     # 获取必要的 session state 变量
     label_encoders = st.session_state.label_encoders if 'label_encoders' in st.session_state else {}
     label_encoder = st.session_state.get('label_encoder', None)
-    is_classification = st.session_state.get('is_classification', True)
+    is_classification = st.session_state.get('is_classification', False)
     num_classes = st.session_state.get('num_classes', None)
 
-    if num_classes is None and label_encoder is not None:
-        num_classes = len(label_encoder.classes_)
-
-    # 显示配置信息（如果有）
-    if config is not None:
-        with st.expander("📋 当前模型配置", expanded=False):
-            st.write(f"- C值: {config.get('C')}")
-            st.write(f"- 正则化类型: {config.get('penalty')}")
-            st.write(f"- 求解器: {config.get('solver')}")
-            st.write(f"- 最大迭代次数: {config.get('max_iter')}")
-            st.write(f"- 测试集比例: {config.get('test_size', 0.2) * 100:.0f}%")
-            st.write(f"- 使用标准化: {'是' if config.get('use_scaler') else '否'}")
-    else:
-        st.info("ℹ️ 当前为上传模型，仅支持预测功能")
+    # 显示配置信息
+    with st.expander("📋 当前模型配置", expanded=False):
+        st.write(f"- 提升迭代次数: {config.get('n_estimators')}")
+        st.write(f"- 学习率: {config.get('learning_rate')}")
+        st.write(f"- 最大深度: {config.get('max_depth')}")
+        st.write(f"- 叶子节点数: {config.get('num_leaves')}")
+        st.write(f"- 最小叶子样本数: {config.get('min_child_samples')}")
+        st.write(f"- 测试集比例: {config.get('test_size', 0.2) * 100:.0f}%")
+        if 'lgb_best_iteration' in st.session_state:
+            st.write(f"- 最佳迭代次数: {st.session_state.lgb_best_iteration}")
 
 
-    # 训练结果（仅当有训练结果时显示）
-    if 'lr_test_score' in st.session_state:
+    # 训练结果
+    if 'lgb_test_score' in st.session_state:
         st.markdown("### 📊 训练结果")
+
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("训练集准确率", f"{st.session_state.lr_train_score:.4f}")
+            metric_name = "准确率" if is_classification else "MAE"
+            st.metric(f"训练集{metric_name}", f"{st.session_state.lgb_train_score:.4f}")
         with col2:
-            st.metric("测试集准确率", f"{st.session_state.lr_test_score:.4f}")
+            st.metric(f"测试集{metric_name}", f"{st.session_state.lgb_test_score:.4f}")
         with col3:
-            st.metric("训练时间", f"{st.session_state.lr_train_time:.2f}秒")
+            st.metric("训练时间", f"{st.session_state.lgb_train_time:.2f}秒")
 
-        # 系数可视化（如果有）
-        if 'lr_coefficients' in st.session_state:
-            st.markdown("### 📈 特征系数（影响程度）")
-            coef_dict = st.session_state.lr_coefficients
-            if num_classes == 2:
-                coef_df = pd.DataFrame({
-                    '特征': list(coef_dict.keys()),
-                    '系数': list(coef_dict.values())
-                }).sort_values('系数', ascending=True)
-                fig = px.bar(coef_df, x='系数', y='特征', orientation='h',
-                             title='特征系数（正数表示正向影响）',
-                             color='系数', color_continuous_scale='RdBu_r')
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                # 多分类的系数显示
-                if label_encoder:
-                    tabs = st.tabs([f'类别 {label_encoder.inverse_transform([i])[0]}' for i in range(num_classes)])
-                    for i, tab in enumerate(tabs):
-                        with tab:
-                            coef_df = pd.DataFrame({
-                                '特征': list(coef_dict[f'类别{i}'].keys()),
-                                '系数': list(coef_dict[f'类别{i}'].values())
-                            }).sort_values('系数', ascending=True)
-                            fig = px.bar(coef_df, x='系数', y='特征', orientation='h',
-                                         title=f'类别 {label_encoder.inverse_transform([i])[0]} 的系数',
-                                         color='系数', color_continuous_scale='RdBu_r')
-                            fig.update_layout(height=400)
-                            st.plotly_chart(fig, use_container_width=True)
+        # 特征重要性可视化
+        if 'lgb_feature_importance' in st.session_state:
+            st.markdown("### 📈 特征重要性")
 
-        # 分类报告（如果有）
-        if 'lr_y_test' in st.session_state and 'lr_y_pred_test' in st.session_state:
+            importance_dict = st.session_state.lgb_feature_importance
+            importance_df = pd.DataFrame({
+                '特征': list(importance_dict.keys()),
+                '重要性': list(importance_dict.values())
+            }).sort_values('重要性', ascending=True)
+
+            fig = px.bar(importance_df, x='重要性', y='特征', orientation='h',
+                         title='特征重要性排序',
+                         color='重要性', color_continuous_scale='Greens')
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+
+        # 分类报告
+        if is_classification and 'lgb_y_test' in st.session_state and 'lgb_y_pred_test' in st.session_state:
             with st.expander("📋 分类详细报告"):
                 report = classification_report(
-                    st.session_state.lr_y_test,
-                    st.session_state.lr_y_pred_test,
+                    st.session_state.lgb_y_test,
+                    st.session_state.lgb_y_pred_test,
                     target_names=label_encoder.classes_ if label_encoder else None,
                     output_dict=True
                 )
@@ -485,117 +594,102 @@ def predict_lr():
 
     st.markdown("---")
 
-    # AI建议按钮（仅当有配置时显示）
-    if config is not None:
-        col1, col2, col3 = st.columns(3)
-        with col3:
-            if st.button("🤖 AI评价及建议", use_container_width=True, key="lr_ai_btn"):
-                if not st.session_state.get('ai_enabled', False):
-                    st.error("❌ AI功能未启用，请检查API Key配置")
-                    st.stop()
+    # AI建议按钮
+    col1, col2, col3 = st.columns(3)
+    with col3:
+        if st.button("🤖 AI评价及建议", use_container_width=True, key="lgb_ai_btn"):
+            if not st.session_state.get('ai_enabled', False):
+                st.error("❌ AI功能未启用，请检查API Key配置")
+                st.stop()
 
-                # 重新定义 solver_options
-                if num_classes > 2:
-                    solver_options = ["lbfgs", "newton-cg", "sag", "saga"]
-                    default_solver = "lbfgs"
-                else:
-                    solver_options = ["lbfgs", "liblinear", "newton-cg", "sag", "saga"]
-                    penalty = config.get('penalty', 'l2')
-                    if penalty == "l1":
-                        default_solver = "liblinear"
-                    elif penalty == "elasticnet":
-                        default_solver = "saga"
-                    else:
-                        default_solver = "lbfgs"
+            test_size_percent = int(config.get('test_size', 0.2) * 100)
+            accuracy = f"{st.session_state.lgb_test_score:.2%}" if is_classification else "N/A"
 
-                test_size_percent = int(config.get('test_size', 0.2) * 100)
-                accuracy = f"{st.session_state.lr_test_score:.2%}" if 'lr_test_score' in st.session_state else "N/A"
-
-                ai_input = {
-                    "数据概况": {
-                        "样本量": len(st.session_state.get('processed_df', pd.DataFrame())),
-                        "特征数": len(feature),
-                        "问题类型": "分类",
-                        "类别数": num_classes
-                    },
-                    "当前配置": {
-                        "C": config.get('C'),
-                        "penalty": config.get('penalty'),
-                        "solver": config.get('solver'),
-                        "max_iter": config.get('max_iter'),
-                        "test_size": test_size_percent
-                    },
-                    "当前效果": {
-                        "准确率": accuracy
-                    },
-                    "约束条件": {
-                        "可用求解器": solver_options,
-                        "是否多分类": num_classes > 2
-                    }
+            ai_input = {
+                "数据概况": {
+                    "样本量": len(st.session_state.processed_df),
+                    "特征数": len(feature),
+                    "问题类型": "分类" if is_classification else "回归",
+                    "类别数": num_classes if is_classification else "N/A"
+                },
+                "当前配置": {
+                    "n_estimators": config.get('n_estimators'),
+                    "learning_rate": config.get('learning_rate'),
+                    "max_depth": config.get('max_depth'),
+                    "num_leaves": config.get('num_leaves'),
+                    "min_child_samples": config.get('min_child_samples'),
+                    "subsample": config.get('subsample', 1.0),
+                    "colsample_bytree": config.get('colsample_bytree', 1.0),
+                    "reg_alpha": config.get('reg_alpha', 0.0),
+                    "reg_lambda": config.get('reg_lambda', 0.0),
+                    "min_split_gain": config.get('min_split_gain', 0.0),
+                    "test_size": test_size_percent
+                },
+                "当前效果": {
+                    "准确率": accuracy
                 }
+            }
 
-                with st.spinner("AI正在分析模型表现..."):
-                    advice = get_lr_ai_advice(ai_input)
+            with st.spinner("AI正在分析模型表现..."):
+                advice = get_lgb_ai_advice(ai_input)
 
-                if advice:
-                    suggested_solver = advice['优化建议'].get('solver')
-                    if suggested_solver and suggested_solver not in solver_options:
-                        advice['优化建议']['solver'] = default_solver
-                        st.warning(f"⚠️ AI建议的求解器 '{suggested_solver}' 当前不可用，已自动替换为 '{default_solver}'")
-
-                    st.session_state.ai_advice = advice
-                    st.session_state.ai_advice_generated = True
-                    st.rerun()
+            if advice:
+                st.session_state.ai_advice = advice
+                st.session_state.ai_advice_generated = True
+                st.rerun()
 
     # AI提示信息
     if st.session_state.get('ai_advice_generated', False):
         st.success("✅ AI建议已生成！请查看左侧边栏下方🤖 AI模型建议，并点击✨ 应用AI建议参数。")
         st.info("💡 提示：请根据建议在步骤3中手动调整参数")
 
-    # 模型保存（仅当有配置时显示）
-    if config is not None:
-        col1, col2 = st.columns(2)
-        with col1:
-            try:
-                # 创建打包数据
-                model_package = {
-                    'model': st.session_state.lr_model,
-                    'scaler': st.session_state.get('lr_scaler', None),
-                    'config': config,
-                    'model_type': 'lr',
-                    'feature_names': feature,
-                    'num_classes': num_classes,
-                    'label_encoder_classes': label_encoder.classes_.tolist() if label_encoder else None
-                }
+    # 模型保存
+    col1, col2 = st.columns(2)
+    with col1:
+        try:
+            # 创建打包数据
+            model_package = {
+                'model': model,
+                'scaler': st.session_state.get('lgb_scaler', None),
+                'config': config,
+                'model_type': 'lgb',
+                'feature_names': feature,
+                'num_classes': num_classes if is_classification else None,
+                'label_encoder_classes': label_encoder.classes_.tolist() if label_encoder else None,
+                'best_iteration': st.session_state.get('lgb_best_iteration')
+            }
 
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as tmp_file:
-                    joblib.dump(model_package, tmp_file.name)
-                    tmp_file_path = tmp_file.name
-                    with open(tmp_file_path, 'rb') as f:
-                        model_bytes = f.read()
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as tmp_file:
+                joblib.dump(model_package, tmp_file.name)
+                tmp_file_path = tmp_file.name
+                with open(tmp_file_path, 'rb') as f:
+                    model_bytes = f.read()
 
-                if os.path.exists(tmp_file_path):
-                    os.unlink(tmp_file_path)
+            if os.path.exists(tmp_file_path):
+                os.unlink(tmp_file_path)
 
-                st.download_button(
-                    label="📥 下载完整模型包 (.pkl)",
-                    data=model_bytes,
-                    file_name=f"lr_model_package_{time.strftime('%Y%m%d_%H%M%S')}.pkl",
-                    mime="application/octet-stream",
-                    use_container_width=True
-                )
-            except Exception as e:
-                st.error(f"❌ 模型保存失败：{str(e)}")
+            st.download_button(
+                label="📥 下载完整模型包 (.pkl)",
+                data=model_bytes,
+                file_name=f"lgb_model_package_{time.strftime('%Y%m%d_%H%M%S')}.pkl",
+                mime="application/octet-stream",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"❌ 模型保存失败：{str(e)}")
 
-        with col2:
+    with col2:
+        try:
             config_json = json.dumps(config, indent=2, ensure_ascii=False)
             st.download_button(
                 label="📄 下载配置 (.json)",
                 data=config_json,
-                file_name=f"lr_config_{time.strftime('%Y%m%d_%H%M%S')}.json",
+                file_name=f"lgb_config_{time.strftime('%Y%m%d_%H%M%S')}.json",
                 mime="application/json",
                 use_container_width=True
             )
+        except Exception as e:
+            st.error(f"❌ 配置保存失败：{str(e)}")
 
     st.markdown("---")
 
@@ -603,21 +697,21 @@ def predict_lr():
     st.markdown("### 🔮 使用模型预测")
 
     # 初始化session state
-    if 'lr_show_prediction' not in st.session_state:
-        st.session_state.lr_show_prediction = False
-    if 'lr_pred_result' not in st.session_state:
-        st.session_state.lr_pred_result = None
-    if 'lr_batch_result' not in st.session_state:
-        st.session_state.lr_batch_result = None
-    if 'lr_manual_counter' not in st.session_state:
-        st.session_state.lr_manual_counter = 0
+    if 'lgb_show_prediction' not in st.session_state:
+        st.session_state.lgb_show_prediction = False
+    if 'lgb_pred_result' not in st.session_state:
+        st.session_state.lgb_pred_result = None
+    if 'lgb_batch_result' not in st.session_state:
+        st.session_state.lgb_batch_result = None
+    if 'lgb_manual_counter' not in st.session_state:
+        st.session_state.lgb_manual_counter = 0
 
     # 预测方式选择
     input_method = st.radio(
         "选择输入方式",
         ["手动输入", "上传文件"],
         horizontal=True,
-        key=f"lr_input_method_{current_counter}"
+        key=f"lgb_input_method_{current_counter}"
     )
 
     if input_method == "手动输入":
@@ -634,7 +728,7 @@ def predict_lr():
                 selected_text = st.selectbox(
                     f"选择 {feat}",
                     options=original_categories,
-                    key=f"lr_pred_feat_{i}_{current_counter}"
+                    key=f"lgb_pred_feat_{i}_{current_counter}"
                 )
 
                 encoded_value = le.transform([selected_text])[0]
@@ -645,7 +739,7 @@ def predict_lr():
                     f"输入 {feat}",
                     value=0.0,
                     step=0.1,
-                    key=f"lr_pred_num_{i}_{current_counter}",
+                    key=f"lgb_pred_num_{i}_{current_counter}",
                     format="%f"
                 )
                 input_values.append(val)
@@ -653,35 +747,35 @@ def predict_lr():
 
         # 预测按钮用当前计数器
         if st.button("🚀 开始预测", type="primary", use_container_width=True,
-                     key=f"lr_predict_btn_{current_counter}"):
+                     key=f"lgb_predict_btn_{current_counter}"):
             try:
                 input_arr = np.array(input_values).reshape(1, -1)
-
-                # 关键修复：先判断 scaler 是不是 None
+                # 检查 scaler 是否存在
                 if scaler is not None:
                     input_scaled = scaler.transform(input_arr)
-                    pred = model.predict(input_scaled)
-                    proba = model.predict_proba(input_scaled)
+                    pred = model.predict(input_scaled)[0]
+                    proba = model.predict_proba(input_scaled)[0] if is_classification else None
                 else:
-                    # scaler 是 None 时，直接用原始数据
-                    pred = model.predict(input_arr)
-                    proba = model.predict_proba(input_arr)
+                    pred = model.predict(input_arr)[0]
+                    proba = model.predict_proba(input_arr)[0] if is_classification else None
                     st.info("ℹ️ 使用原始数据进行预测（无标准化）")
 
-                st.session_state.lr_pred_result = {
+
+                st.session_state.lgb_pred_result = {
                     'input_display': input_display,
                     'features': feature,
-                    'prediction': pred[0],
-                    'probabilities': proba[0]
+                    'prediction': pred
                 }
-                st.session_state.lr_show_prediction = True
-                st.session_state.lr_predict_counter += 1
+                st.session_state.lgb_show_prediction = True
+                # 增加计数器，下次进入时key会变化
+                st.session_state.lgb_predict_counter += 1
                 st.rerun()
             except Exception as e:
                 st.error(f"❌ 预测出错：{str(e)}")
 
-        if st.session_state.lr_show_prediction and st.session_state.lr_pred_result is not None:
-            result = st.session_state.lr_pred_result
+        # 显示预测结果
+        if st.session_state.lgb_show_prediction and st.session_state.lgb_pred_result is not None:
+            result = st.session_state.lgb_pred_result
             st.markdown("---")
             st.markdown("### 📝 输入特征：")
             for i, feat in enumerate(result['features']):
@@ -689,32 +783,39 @@ def predict_lr():
 
             st.markdown("### 🎯 预测结果")
             pred = result['prediction']
-            proba = result['probabilities']
+            proba = result.get('probabilities')
 
-            if label_encoder:
-                res_text = label_encoder.inverse_transform([int(pred)])[0]
-                st.success(f"**预测类别：{res_text}**")
-                st.write("各类别概率：")
-                for i, p in enumerate(proba):
-                    if i < len(label_encoder.classes_):
-                        class_name = label_encoder.inverse_transform([i])[0]
-                        st.write(f"- {class_name}: {p:.2%}")
+            if is_classification:
+                # 确保pred是整数且在范围内
+                pred_int = int(pred)
+                if 0 <= pred_int < len(label_encoder.classes_):
+                    res_text = label_encoder.inverse_transform([pred_int])[0]
+                    st.success(f"**预测类别：{res_text}**")
+                else:
+                    st.success(f"**预测类别索引：{pred_int}**")
+
+                if proba is not None:
+                    st.write("各类别概率：")
+                    for i, p in enumerate(proba):
+                        if i < len(label_encoder.classes_):
+                            class_name = label_encoder.inverse_transform([i])[0]
+                            st.write(f"- {class_name}: {p:.2%}")
+                        else:
+                            st.write(f"- 类别{i}: {p:.2%}")
             else:
-                st.success(f"**预测类别索引：{int(pred)}**")
-                st.write("各类别概率：")
-                for i, p in enumerate(proba):
-                    st.write(f"- 类别{i}: {p:.2%}")
+                st.success(f"**预测值：{pred:.4f}**")
+
 
 
     else:  # 上传文件模式
 
         st.write("上传文件进行批量预测：")
 
-        uploader_key = f"lr_pred_file_{st.session_state.get('lr_batch_counter', 0)}"
+        uploader_key = f"lgb_pred_file_{st.session_state.get('lgb_batch_counter', 0)}"
 
         pred_file = st.file_uploader("选择预测文件", ['csv', 'xlsx'], key=uploader_key)
 
-        if pred_file and st.session_state.lr_batch_result is None:
+        if pred_file and st.session_state.lgb_batch_result is None:
 
             try:
 
@@ -748,7 +849,7 @@ def predict_lr():
 
                 else:
 
-                    if st.button("开始批量预测", type="primary", key="lr_batch_predict"):
+                    if st.button("开始批量预测", type="primary", key="lgb_batch_predict"):
 
                         with st.spinner("正在预测中..."):
 
@@ -759,49 +860,57 @@ def predict_lr():
 
                             preds = model.predict(X_pred)
 
-                            probas = model.predict_proba(X_pred)
-
                             result_df = df_pred.copy()
 
-                            # ✅ 逻辑回归总是分类问题
+                            # ✅ 通用维度处理
 
-                            if num_classes == 2:  # 二分类
+                            if is_classification:
 
-                                if label_encoder:
+                                if num_classes == 2:  # 二分类
 
-                                    result_df['预测结果'] = [label_encoder.inverse_transform([int(p)])[0] for p in
-                                                             preds]
+                                    probas = model.predict_proba(X_pred)
 
-                                else:
-
-                                    result_df['预测结果'] = preds
-
-                                result_df['预测概率'] = probas[:, 1]  # 正类的概率
-
-                            else:  # 多分类
-
-                                if label_encoder:
-
-                                    result_df['预测结果'] = [label_encoder.inverse_transform([int(p)])[0] for p in
-                                                             preds]
-
-                                else:
+                                    result_df['预测概率'] = probas[:, 1]  # 正类的概率
 
                                     result_df['预测结果'] = preds
 
-                                for i in range(probas.shape[1]):
+                                    if label_encoder:
+                                        result_df['预测结果'] = result_df['预测结果'].apply(
 
-                                    if label_encoder and i < len(label_encoder.classes_):
+                                            lambda x: label_encoder.inverse_transform([int(x)])[0]
 
-                                        class_name = label_encoder.inverse_transform([i])[0]
+                                        )
 
-                                    else:
+                                else:  # 多分类
 
-                                        class_name = f"类别{i}"
+                                    probas = model.predict_proba(X_pred)
 
-                                    result_df[f'{class_name}_概率'] = probas[:, i]
+                                    result_df['预测结果'] = preds
 
-                            st.session_state.lr_batch_result = result_df
+                                    if label_encoder:
+                                        result_df['预测结果'] = result_df['预测结果'].apply(
+
+                                            lambda x: label_encoder.inverse_transform([int(x)])[0]
+
+                                        )
+
+                                    for i in range(probas.shape[1]):
+
+                                        if label_encoder and i < len(label_encoder.classes_):
+
+                                            class_name = label_encoder.inverse_transform([i])[0]
+
+                                        else:
+
+                                            class_name = f'类别{i}'
+
+                                        result_df[f'{class_name}_概率'] = probas[:, i]
+
+                            else:  # 回归
+
+                                result_df['预测值'] = preds
+
+                            st.session_state.lgb_batch_result = result_df
 
                             st.rerun()
 
@@ -809,8 +918,8 @@ def predict_lr():
 
                 st.error(f"❌ 预测出错：{str(e)}")
 
-        if st.session_state.lr_batch_result is not None:
-            result_df = st.session_state.lr_batch_result
+        if st.session_state.lgb_batch_result is not None:
+            result_df = st.session_state.lgb_batch_result
             st.success(f"✅ 完成 {len(result_df)} 条数据预测")
             st.dataframe(result_df, use_container_width=True)
 
@@ -820,34 +929,35 @@ def predict_lr():
                 data=csv_data,
                 file_name="预测结果.csv",
                 mime="text/csv",
-                key="lr_download_results"
+                key="lgb_download_results"
             )
+
 
     st.markdown("---")
 
     # 操作按钮
     col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("🔄 重新训练", use_container_width=True, key="lr_retrain"):
-            keys_to_remove = ['lr_model', 'lr_config', 'lr_train_score', 'lr_test_score',
-                              'lr_coefficients', 'lr_X_test', 'lr_y_test', 'lr_y_pred_test',
-                              'lr_scaler', 'lr_batch_result', 'lr_pred_result']
+        if st.button("🔄 重新训练", use_container_width=True, key="lgb_retrain"):
+            keys_to_remove = ['lgb_model', 'lgb_config', 'lgb_train_score', 'lgb_test_score',
+                              'lgb_feature_importance', 'lgb_X_test', 'lgb_y_test', 'lgb_y_pred_test',
+                              'lgb_scaler', 'lgb_best_iteration', 'lgb_batch_result', 'lgb_pred_result']
             for key in keys_to_remove:
                 if key in st.session_state:
                     del st.session_state[key]
             st.session_state.step = 3
             st.rerun()
     with col2:
-        if st.button("🔮 新预测", use_container_width=True, key="lr_new_prediction"):
-            st.session_state.lr_show_prediction = False
-            st.session_state.lr_pred_result = None
-            st.session_state.lr_batch_result = None
-            st.session_state.lr_manual_counter += 1
-            if 'lr_batch_counter' in st.session_state:
-                st.session_state.lr_batch_counter += 1
+        if st.button("🔮 新预测", use_container_width=True, key="lgb_new_prediction"):
+            st.session_state.lgb_show_prediction = False
+            st.session_state.lgb_pred_result = None
+            st.session_state.lgb_batch_result = None
+            st.session_state.lgb_manual_counter += 1
+            if 'lgb_batch_counter' in st.session_state:
+                st.session_state.lgb_batch_counter += 1
             st.rerun()
     with col3:
-        if st.button("🏁 全新开始", use_container_width=True, key="lr_fresh"):
+        if st.button("🏁 全新开始", use_container_width=True, key="lgb_fresh"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
