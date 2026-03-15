@@ -237,10 +237,8 @@ def train_ann():
         y = y_original
         stratify = y_original if is_classification else None
 
-    # 确保 test_size 是 float 且在 0-1 之间
     try:
         test_size_float = float(test_size) / 100.0
-        # 确保 test_size_float 在有效范围内
         if test_size_float <= 0 or test_size_float >= 1:
             test_size_float = 0.2
             st.warning(f"测试集比例 {test_size}% 无效，已自动调整为 20%")
@@ -253,10 +251,16 @@ def train_ann():
         stratify=stratify
     )
 
-    # 保存原始测试标签用于评估
     if is_classification and num_classes > 2:
+        try:
+            test_size_float = float(test_size) / 100.0
+            if test_size_float <= 0 or test_size_float >= 1:
+                test_size_float = 0.2
+        except:
+            test_size_float = 0.2
+            st.warning(f"测试集比例格式错误，已自动调整为 20%")
         _, y_test_original = train_test_split(
-            y_original, test_size=test_size / 100, random_state=42,
+            y_original, test_size=test_size_float, random_state=42,
             stratify=y_original
         )
     else:
