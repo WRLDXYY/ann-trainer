@@ -382,8 +382,12 @@ def predict_rf():
             model = st.session_state.uploaded_model
             st.info("📌 使用上传的随机森林模型进行预测")
 
-            # ✅ 修改：随机森林不需要scaler
-            scaler = None
+            # 从 session_state 获取上传模型时保存的 label_encoder
+            if 'label_encoder' in st.session_state and st.session_state.label_encoder is not None:
+                label_encoder = st.session_state.label_encoder
+                is_classification = True
+                num_classes = len(label_encoder.classes_)
+                st.info(f"📌 检测到分类问题，类别数: {num_classes}")
 
             # 尝试从原始数据获取特征名
             if st.session_state.df is not None:
@@ -398,6 +402,10 @@ def predict_rf():
                 else:
                     n_features = 6
                 feature = [f"特征_{i + 1}" for i in range(n_features)]
+
+            # 随机森林不需要scaler
+            scaler = None
+
         else:
             st.warning("请先训练模型或上传随机森林模型文件")
             if st.button("返回训练"):
@@ -553,18 +561,18 @@ def predict_rf():
     # ===== 预测功能 =====
     st.markdown("### 🔮 使用模型预测")
     st.markdown("""
-                    上传文件批量预测需注意：
-                    - 1. 确保上传文件为：CSV或Excel
-                    - 2. **特征列完整**：必须包含模型训练时的所有特征列（列名需与训练数据完全一致，大小写/空格敏感）；
-                    - 3. **无缺失值**：特征列不能有空白单元格（NaN），需提前删除含缺失值的行或填充；
-                    - 4. **数据类型正确**：
-                       - (1) 数值型特征（如面积、年龄）：仅保留纯数字（int/float），不含文本、特殊符号（如「120㎡」「二十岁」）；
-                       - (2)类别型特征（如性别、学历）：填写原始文本值（如「男/女」「本科/硕士」），**不要填写编码后的数字**；
-                    - 5. **无需标签列**：预测文件仅需特征列，无需包含训练时的标签列（模型会自动生成预测结果）；
-                    - 6. **编码一致**：类别特征的取值需与训练数据一致（如训练时「性别」只有「男/女」，预测时不能出现「未知」）。
+                上传文件批量预测需注意：
+                - 1. 确保上传文件为：CSV或Excel
+                - 2. **特征列完整**：必须包含模型训练时的所有特征列（列名需与训练数据完全一致，大小写/空格敏感）；
+                - 3. **无缺失值**：特征列不能有空白单元格（NaN），需提前删除含缺失值的行或填充；
+                - 4. **数据类型正确**：
+                    - (1) 数值型特征（如面积、年龄）：仅保留纯数字（int/float），不含文本、特殊符号（如「120㎡」「二十岁」）；
+                    - (2)类别型特征（如性别、学历）：填写原始文本值（如「男/女」「本科/硕士」），**不要填写编码后的数字**；
+                - 5. **无需标签列**：预测文件仅需特征列，无需包含训练时的标签列（模型会自动生成预测结果）；
+                - 6. **编码一致**：类别特征的取值需与训练数据一致（如训练时「性别」只有「男/女」，预测时不能出现「未知」）。
 
-                    ❗ 若预测报错，请按上述要求检查文件后重试（常见问题：列名不一致、含非数值字符、存在缺失值）。
-                    """)
+                ❗ 若预测报错，请按上述要求检查文件后重试（常见问题：列名不一致、含非数值字符、存在缺失值）。
+                            """)
 
     # 初始化session state
     if 'rf_show_prediction' not in st.session_state:
@@ -620,18 +628,30 @@ def predict_rf():
                      key=f"rf_predict_btn_{current_counter}"):
             try:
                 input_arr = np.array(input_values).reshape(1, -1)
-                # 检查 scaler 是否存在
                 pred = model.predict(input_arr)[0]
                 proba = model.predict_proba(input_arr)[0] if is_classification else None
 
+                # ✅ 如果是分类问题，将预测结果转译为原始文本
+                if is_classification and label_encoder is not None:
+                    try:
+                        pred_int = int(pred)
+                        if 0 <= pred_int < len(label_encoder.classes_):
+                            pred_text = label_encoder.inverse_transform([pred_int])[0]
+                        else:
+                            pred_text = str(pred_int)
+                    except:
+                        pred_text = str(pred)
+                else:
+                    pred_text = pred
 
                 st.session_state.rf_pred_result = {
                     'input_display': input_display,
                     'features': feature,
-                    'prediction': pred
+                    'prediction': pred,
+                    'prediction_text': pred_text,  # 保存转译后的文本
+                    'probabilities': proba
                 }
                 st.session_state.rf_show_prediction = True
-                # 增加计数器，下次进入时key会变化
                 st.session_state.rf_predict_counter += 1
                 st.rerun()
             except Exception as e:
@@ -646,15 +666,18 @@ def predict_rf():
                 st.write(f"- {feat}：{result['input_display'][i]}")
 
             st.markdown("### 🎯 预测结果")
-            pred = result['prediction']
 
             if is_classification:
-                pred_int = int(pred)
-                if label_encoder and 0 <= pred_int < len(label_encoder.classes_):
-                    res_text = label_encoder.inverse_transform([pred_int])[0]
-                    st.success(f"**预测类别：{res_text}**")
+                # 使用转译后的文本显示
+                if 'prediction_text' in result:
+                    st.success(f"**预测类别：{result['prediction_text']}**")
                 else:
-                    st.success(f"**预测类别索引：{pred_int}**")
+                    pred_int = int(result['prediction'])
+                    if label_encoder and 0 <= pred_int < len(label_encoder.classes_):
+                        res_text = label_encoder.inverse_transform([pred_int])[0]
+                        st.success(f"**预测类别：{res_text}**")
+                    else:
+                        st.success(f"**预测类别索引：{pred_int}**")
 
                 # 显示概率
                 if result.get('probabilities') is not None:
@@ -666,7 +689,7 @@ def predict_rf():
                             class_name = f'类别{i}'
                         st.write(f"- {class_name}: {p:.2%}")
             else:
-                st.success(f"**预测值：{pred:.4f}**")
+                st.success(f"**预测值：{result['prediction']:.4f}**")
 
 
     else:  # 上传文件模式
@@ -722,45 +745,26 @@ def predict_rf():
                             result_df = df_pred.copy()
 
                             if is_classification:
-
                                 if num_classes == 2:  # 二分类
-
                                     probas = model.predict_proba(X_pred)
-
                                     result_df['预测概率'] = probas[:, 1]
-
                                     if label_encoder:
-
                                         result_df['预测结果'] = [label_encoder.inverse_transform([int(p)])[0] for p in
                                                                  preds]
-
                                     else:
-
                                         result_df['预测结果'] = preds
-
                                 else:  # 多分类
-
                                     probas = model.predict_proba(X_pred)
-
                                     if label_encoder:
-
                                         result_df['预测结果'] = [label_encoder.inverse_transform([int(p)])[0] for p in
                                                                  preds]
-
                                     else:
-
                                         result_df['预测结果'] = preds
-
                                     for i in range(probas.shape[1]):
-
                                         if label_encoder and i < len(label_encoder.classes_):
-
                                             class_name = label_encoder.inverse_transform([i])[0]
-
                                         else:
-
                                             class_name = f'类别{i}'
-
                                         result_df[f'{class_name}_概率'] = probas[:, i]
 
                             else:  # 回归
