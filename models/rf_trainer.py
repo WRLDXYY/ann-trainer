@@ -258,7 +258,10 @@ def train_rf():
             'min_samples_leaf': min_samples_leaf,
             'max_features': max_features,
             'random_state': random_state,
-            'test_size': test_size / 100
+            'test_size': test_size / 100,
+            'label_encoder': le if is_classification else None,  # 添加这一行
+            'is_classification': is_classification,
+            'num_classes': num_classes
         }
         st.session_state.is_classification = is_classification
         st.session_state.num_classes = num_classes
@@ -382,12 +385,36 @@ def predict_rf():
             model = st.session_state.uploaded_model
             st.info("📌 使用上传的随机森林模型进行预测")
 
-            # 从 session_state 获取上传模型时保存的 label_encoder
-            if 'label_encoder' in st.session_state and st.session_state.label_encoder is not None:
+            # 从 uploaded_model 对应的配置中获取 label_encoder
+            # 尝试从多个可能的地方获取 label_encoder
+            label_encoder = None
+            is_classification = False
+            num_classes = None
+
+            # 1. 先从 rf_config 中获取
+            if 'rf_config' in st.session_state and st.session_state.rf_config is not None:
+                config = st.session_state.rf_config
+                if 'label_encoder' in config:
+                    label_encoder = config['label_encoder']
+                    is_classification = True
+                    num_classes = len(label_encoder.classes_) if label_encoder else None
+                    st.info(f"📌 从配置中获取到分类信息，类别数: {num_classes}")
+
+            # 2. 如果上面没有，从通用的 label_encoder 获取
+            if label_encoder is None and 'label_encoder' in st.session_state and st.session_state.label_encoder is not None:
                 label_encoder = st.session_state.label_encoder
                 is_classification = True
                 num_classes = len(label_encoder.classes_)
                 st.info(f"📌 检测到分类问题，类别数: {num_classes}")
+
+            # 3. 如果还是没有，尝试从数据推断
+            if label_encoder is None and st.session_state.df is not None:
+                target = st.session_state.df.columns[-1]
+                if target in st.session_state.label_encoders:
+                    label_encoder = st.session_state.label_encoders[target]
+                    is_classification = True
+                    num_classes = len(label_encoder.classes_)
+                    st.info(f"📌 从原始数据中获取到分类信息，类别数: {num_classes}")
 
             # 尝试从原始数据获取特征名
             if st.session_state.df is not None:
