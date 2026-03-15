@@ -324,114 +324,97 @@ def train_lr():
             class_weight = 'balanced'
             st.info(f"📊 应用Class Weight：balanced")
 
-        # 在创建模型之前，确保所有参数都合法
-        with st.spinner("模型训练中..."):
-            start_time = time.time()
+        # 开始计时
+        start_time = time.time()
 
-            # 简化的参数设置
+        # 确保C值是正数
+        try:
+            # 先定义变量
+            C_value = float(C)
+            max_iter_value = int(max_iter)
+
+            # 打印所有参数的值，帮助调试
+            st.write(
+                f"调试信息 - C: {C_value}({type(C_value)}), penalty: {penalty}({type(penalty)}), solver: {solver}({type(solver)}), max_iter: {max_iter_value}({type(max_iter_value)})")
+
+            # 确保C值是正数
+            if C_value <= 0:
+                C_value = 1.0
+                st.warning(f"C值 {C} 无效，已自动调整为 1.0")
+
+            # 确保max_iter是正整数
+            if max_iter_value <= 0:
+                max_iter_value = 100
+                st.warning(f"最大迭代次数 {max_iter} 无效，已自动调整为 100")
+
+            # 对于多分类问题，不显式设置 multi_class，让 sklearn 自动处理
             if num_classes > 2:
-                # 多分类问题 - 使用默认设置
-                multi_class = 'multinomial'
                 # 确保使用支持多分类的求解器
                 if solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
                     solver = 'lbfgs'
                     st.warning(f"求解器 {solver} 不支持多分类，已自动调整为 lbfgs")
-            else:
-                multi_class = 'ovr'
 
-            # 确保penalty和solver组合合法
-            if penalty == 'l1' and solver not in ['liblinear', 'saga']:
-                solver = 'liblinear'
-                st.warning("l1 penalty需要使用 liblinear 或 saga，已自动调整为 liblinear")
-            elif penalty == 'elasticnet' and solver != 'saga':
-                solver = 'saga'
-                st.warning("elasticnet penalty需要使用 saga，已自动调整为 saga")
-            elif penalty == 'none' and solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
-                solver = 'lbfgs'
-                st.warning("none penalty需要使用 lbfgs、newton-cg、sag 或 saga，已自动调整为 lbfgs")
-
-            # 确保C值是正数
-            try:
-                C_value = float(C)
-                if C_value <= 0:
-                    C_value = 1.0
-                    st.warning(f"C值 {C} 无效，已自动调整为 1.0")
-            except:
-                C_value = 1.0
-                st.warning(f"C值格式错误，已自动调整为 1.0")
-
-            # 确保max_iter是正整数
-            try:
-                max_iter_value = int(max_iter)
-                if max_iter_value <= 0:
-                    max_iter_value = 100
-                    st.warning(f"最大迭代次数 {max_iter} 无效，已自动调整为 100")
-            except:
-                max_iter_value = 100
-                st.warning(f"最大迭代次数格式错误，已自动调整为 100")
-
-            # 确保class_weight合法
-            if class_weight is not None and class_weight not in ['balanced', None]:
-                class_weight = 'balanced'
-                st.warning(f"class_weight值无效，已自动调整为 'balanced'")
-
-            # 显示最终使用的参数
-            st.info(
-                f"使用参数 - C: {C_value}, penalty: {penalty}, solver: {solver}, max_iter: {max_iter_value}, multi_class: {multi_class}")
-
-            try:
                 model = LogisticRegression(
                     C=C_value,
                     penalty=penalty,
                     solver=solver,
                     max_iter=max_iter_value,
-                    multi_class='auto',  
                     class_weight=class_weight,
                     random_state=42,
                     n_jobs=-1
                 )
-            except Exception as e:
-                st.error(f"模型创建失败：{str(e)}")
-                st.stop()
-
-            # 训练
-            try:
-                model.fit(X_train_scaled, y_train)
-            except Exception as e:
-                st.error(f"模型训练失败：{str(e)}")
-                st.stop()
-
-            train_time = time.time() - start_time
-
-
-            # 预测
-            y_pred_train = model.predict(X_train_scaled)
-            y_pred_test = model.predict(X_test_scaled)
-
-            # 评估
-            train_score = accuracy_score(y_train, y_pred_train)
-            test_score = accuracy_score(y_test, y_pred_test)
-
-            # 特征重要性（系数）
-            if num_classes == 2:
-                coefficients = dict(zip(feature, model.coef_[0]))
             else:
-                coefficients = {f'类别{i}': dict(zip(feature, model.coef_[i]))
-                                for i in range(num_classes)}
+                model = LogisticRegression(
+                    C=C_value,
+                    penalty=penalty,
+                    solver=solver,
+                    max_iter=max_iter_value,
+                    class_weight=class_weight,
+                    random_state=42,
+                    n_jobs=-1
+                )
+        except Exception as e:
+            st.error(f"模型创建失败：{str(e)}")
+            st.error(f"错误类型：{type(e).__name__}")
+            st.stop()
 
-            # 保存结果
-            st.session_state.lr_model = model
-            st.session_state.lr_train_score = train_score
-            st.session_state.lr_test_score = test_score
-            st.session_state.lr_train_time = train_time
-            st.session_state.lr_coefficients = coefficients
-            st.session_state.lr_X_test = X_test_scaled
-            st.session_state.lr_y_test = y_test
-            st.session_state.lr_y_pred_test = y_pred_test
+        # 训练
+        try:
+            model.fit(X_train_scaled, y_train)
+        except Exception as e:
+            st.error(f"模型训练失败：{str(e)}")
+            st.stop()
 
-            st.success(f"✅ 模型训练完成！ 训练时间: {train_time:.2f}秒")
-            st.session_state.step = 4
-            st.rerun()
+        train_time = time.time() - start_time
+
+        # 预测
+        y_pred_train = model.predict(X_train_scaled)
+        y_pred_test = model.predict(X_test_scaled)
+
+        # 评估
+        train_score = accuracy_score(y_train, y_pred_train)
+        test_score = accuracy_score(y_test, y_pred_test)
+
+        # 特征重要性（系数）
+        if num_classes == 2:
+            coefficients = dict(zip(feature, model.coef_[0]))
+        else:
+            coefficients = {f'类别{i}': dict(zip(feature, model.coef_[i]))
+                            for i in range(num_classes)}
+
+        # 保存结果
+        st.session_state.lr_model = model
+        st.session_state.lr_train_score = train_score
+        st.session_state.lr_test_score = test_score
+        st.session_state.lr_train_time = train_time
+        st.session_state.lr_coefficients = coefficients
+        st.session_state.lr_X_test = X_test_scaled
+        st.session_state.lr_y_test = y_test
+        st.session_state.lr_y_pred_test = y_pred_test
+
+        st.success(f"✅ 模型训练完成！ 训练时间: {train_time:.2f}秒")
+        st.session_state.step = 4
+        st.rerun()
 
     # 返回按钮
     if st.button("← 返回数据清洗", key="lr_back_clean"):
