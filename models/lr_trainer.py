@@ -157,10 +157,44 @@ def train_lr():
         suggested = st.session_state.ai_suggested_params
         st.success("✨ 已应用AI建议的参数，你可以直接点击训练")
 
-        default_C = float(suggested.get('C', 1.0))
+        # 处理C值
+        try:
+            default_C = float(suggested.get('C', 1.0))
+            if default_C <= 0:
+                default_C = 1.0
+        except:
+            default_C = 1.0
+
+        # 处理penalty - 确保是合法的值
+        valid_penalties = ['l1', 'l2', 'elasticnet', 'none']
         default_penalty = suggested.get('penalty', 'l2')
+        if default_penalty not in valid_penalties:
+            default_penalty = 'l2'
+            st.warning(f"penalty值 '{default_penalty}' 无效，已自动调整为 'l2'")
+
+        # 处理solver - 确保是合法的值
+        valid_solvers = ['lbfgs', 'liblinear', 'newton-cg', 'sag', 'saga']
         default_solver = suggested.get('solver', 'lbfgs')
-        default_max_iter = int(suggested.get('max_iter', 100))
+        if default_solver not in valid_solvers:
+            default_solver = 'lbfgs'
+            st.warning(f"solver值 '{default_solver}' 无效，已自动调整为 'lbfgs'")
+
+        # 检查penalty和solver的组合是否合法
+        if default_penalty == 'l1' and default_solver not in ['liblinear', 'saga']:
+            default_solver = 'liblinear'
+            st.warning(f"l1 penalty需要liblinear或saga求解器，已自动调整为liblinear")
+        elif default_penalty == 'elasticnet' and default_solver != 'saga':
+            default_solver = 'saga'
+            st.warning(f"elasticnet penalty需要saga求解器，已自动调整为saga")
+
+        # 处理max_iter
+        try:
+            default_max_iter = int(suggested.get('max_iter', 100))
+            if default_max_iter <= 0:
+                default_max_iter = 100
+        except:
+            default_max_iter = 100
+
         default_test_size = int(suggested.get('test_size', 20))
     else:
         default_C = 1.0
