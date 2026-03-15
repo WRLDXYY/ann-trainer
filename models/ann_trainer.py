@@ -157,7 +157,6 @@ def train_ann():
     is_classification = target in label_encoders
 
     # ===== 检查是否有AI建议的参数 =====
-    # ===== 检查是否有AI建议的参数 =====
     if 'ai_suggested_params' in st.session_state:
         suggested = st.session_state.ai_suggested_params
         st.success("✨ 已应用AI建议的参数，你可以直接点击训练")
@@ -170,7 +169,7 @@ def train_ann():
         default_learning_rate = float(suggested.get('学习率', 0.001))
         default_batch_size = int(suggested.get('批次大小', 32))
         default_epochs = int(suggested.get('训练轮次', 50))
-        default_test_size = int(suggested.get('测试集比例', 20))
+        default_test_size = int(suggested.get('test_size', 20))
     else:
         default_hidden_layers = 2
         default_neurons = 64
