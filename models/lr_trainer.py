@@ -385,7 +385,7 @@ def train_lr():
                     penalty=penalty,
                     solver=solver,
                     max_iter=max_iter_value,
-                    multi_class=multi_class,
+                    multi_class='auto',  
                     class_weight=class_weight,
                     random_state=42,
                     n_jobs=-1
