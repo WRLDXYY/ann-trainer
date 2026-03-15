@@ -616,23 +616,13 @@ def predict_rf():
                 pred = model.predict(input_arr)[0]
                 proba = model.predict_proba(input_arr)[0] if is_classification else None
 
-                # 转译预测结果
-                pred_text = pred
-                if is_classification and label_encoder is not None:
-                    try:
-                        pred_int = int(pred)
-                        if 0 <= pred_int < len(label_encoder.classes_):
-                            pred_text = label_encoder.inverse_transform([pred_int])[0]
-                        else:
-                            pred_text = str(pred_int)
-                    except:
-                        pred_text = str(pred)
+                # 这里应该有转译代码和保存 prediction_text 的代码
 
                 st.session_state.rf_pred_result = {
                     'input_display': input_display,
                     'features': feature,
                     'prediction': pred,
-                    'prediction_text': pred_text,
+                    'prediction_text': pred_text,  # 这一行很重要
                     'probabilities': proba
                 }
                 st.session_state.rf_show_prediction = True
@@ -650,12 +640,6 @@ def predict_rf():
                 st.write(f"- {feat}：{result['input_display'][i]}")
 
             st.markdown("### 🎯 预测结果")
-
-            # 显示预测结果前添加调试信息
-            st.write(f"调试 - result 内容: {result.keys()}")
-            st.write(f"调试 - prediction 值: {result['prediction']}, 类型: {type(result['prediction'])}")
-            if 'prediction_text' in result:
-                st.write(f"调试 - prediction_text 值: {result['prediction_text']}")
 
             if is_classification:
                 if 'prediction_text' in result:
