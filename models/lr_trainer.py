@@ -324,15 +324,44 @@ def train_lr():
             class_weight = 'balanced'
             st.info(f"📊 应用Class Weight：balanced")
 
-        # 创建模型
+        # 在创建模型之前，确保所有参数都合法
         with st.spinner("模型训练中..."):
             start_time = time.time()
 
             # 多分类自动处理
             if num_classes > 2:
+                # 多分类问题
                 multi_class = 'multinomial'
+                # 多分类不能使用liblinear
+                if solver == 'liblinear':
+                    solver = 'lbfgs'
+                    st.warning("多分类问题不支持liblinear求解器，已自动调整为lbfgs")
             else:
                 multi_class = 'ovr'
+
+            # 确保solver和penalty的组合合法
+            if penalty == 'l1':
+                if solver not in ['liblinear', 'saga']:
+                    solver = 'liblinear'
+                    st.warning("l1 penalty需要liblinear或saga求解器，已自动调整为liblinear")
+            elif penalty == 'elasticnet':
+                if solver != 'saga':
+                    solver = 'saga'
+                    st.warning("elasticnet penalty需要saga求解器，已自动调整为saga")
+            elif penalty == 'none':
+                if solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
+                    solver = 'lbfgs'
+                    st.warning("none penalty需要lbfgs、newton-cg、sag或saga求解器，已自动调整为lbfgs")
+            elif penalty == 'l2':
+                # l2是默认值，大多数求解器都支持
+                if num_classes > 2 and solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
+                    solver = 'lbfgs'
+                    st.warning("多分类问题需要lbfgs、newton-cg、sag或saga求解器，已自动调整为lbfgs")
+
+            # 确保solver和multi_class的组合合法
+            if solver == 'liblinear' and multi_class == 'multinomial':
+                solver = 'lbfgs'
+                st.warning("liblinear求解器不支持multinomial，已自动调整为lbfgs")
 
             # 在创建模型之前添加参数检查
             try:
@@ -360,36 +389,9 @@ def train_lr():
                 class_weight = 'balanced'
                 st.warning(f"class_weight值无效，已自动调整为 'balanced'")
 
-            if penalty == 'l1' and solver not in ['liblinear', 'saga']:
-                solver = 'liblinear'
-                st.warning(f"l1 penalty需要liblinear或saga求解器，已自动调整为liblinear")
-            elif penalty == 'elasticnet' and solver != 'saga':
-                solver = 'saga'
-                st.warning(f"elasticnet penalty需要saga求解器，已自动调整为saga")
-            elif penalty == 'none' and solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
-                solver = 'lbfgs'
-                st.warning(f"none penalty需要lbfgs、newton-cg、sag或saga求解器，已自动调整为lbfgs")
-            elif penalty == 'l2' and num_classes > 2 and solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
-                solver = 'lbfgs'
-                st.warning(f"多分类问题需要lbfgs、newton-cg、sag或saga求解器，已自动调整为lbfgs")
-
-            # 在创建模型之前，确保multi_class参数正确
-            if num_classes > 2:
-                # 多分类问题
-                if multi_class not in ['multinomial', 'ovr']:
-                    multi_class = 'multinomial'
-                    st.warning("多分类问题，已自动设置为 'multinomial'")
-            else:
-                # 二分类问题，multi_class可以设置为'ovr'或'auto'
-                multi_class = 'ovr'
-
-            # 再次检查solver和penalty的组合（包括multi_class的限制）
-            if solver in ['liblinear'] and multi_class == 'multinomial':
-                solver = 'lbfgs'
-                st.warning("liblinear求解器不支持multinomial，已自动调整为lbfgs")
-            elif solver in ['sag', 'saga'] and num_classes > 2 and multi_class == 'ovr':
-                # sag/saga支持multinomial，但也可以用于ovr
-                pass
+            # 显示最终使用的参数
+            st.info(
+                f"使用参数 - C: {C_value}, penalty: {penalty}, solver: {solver}, max_iter: {max_iter_value}, multi_class: {multi_class}")
 
             model = LogisticRegression(
                 C=C_value,
