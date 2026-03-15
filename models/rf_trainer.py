@@ -385,60 +385,22 @@ def predict_rf():
             model = st.session_state.uploaded_model
             st.info("📌 使用上传的随机森林模型进行预测")
 
-            # 从 uploaded_model 对应的配置中获取 label_encoder
-            # 尝试从多个可能的地方获取 label_encoder
-            label_encoder = None
-            is_classification = False
-            num_classes = None
-
-            # 1. 先从 rf_config 中获取
-            if 'rf_config' in st.session_state and st.session_state.rf_config is not None:
-                config = st.session_state.rf_config
-                #st.write(f"调试 - rf_config 内容: {config.keys()}")  # 调试信息
-                if 'label_encoder' in config:
-                    label_encoder = config['label_encoder']
-                    is_classification = True
-                    num_classes = len(label_encoder.classes_) if label_encoder else None
-                    st.info(f"📌 从配置中获取到分类信息，类别数: {num_classes}")
-                    #st.write(f"调试 - label_encoder.classes_: {label_encoder.classes_}")  # 调试信息
-
-            # 2. 如果上面没有，从通用的 label_encoder 获取
-            if label_encoder is None and 'label_encoder' in st.session_state and st.session_state.label_encoder is not None:
+            # 直接从 session_state 获取已经重建的 label_encoder
+            if 'label_encoder' in st.session_state and st.session_state.label_encoder is not None:
                 label_encoder = st.session_state.label_encoder
                 is_classification = True
                 num_classes = len(label_encoder.classes_)
-                st.info(f"📌 检测到分类问题，类别数: {num_classes}")
-                st.write(f"调试 - 通用 label_encoder.classes_: {label_encoder.classes_}")  # 调试信息
-
-            # 3. 如果还是没有，尝试从数据推断
-            if label_encoder is None and st.session_state.df is not None:
-                target = st.session_state.df.columns[-1]
-                if target in st.session_state.label_encoders:
-                    label_encoder = st.session_state.label_encoders[target]
-                    is_classification = True
-                    num_classes = len(label_encoder.classes_)
-                    st.info(f"📌 从原始数据中获取到分类信息，类别数: {num_classes}")
-                    st.write(f"调试 - 数据 label_encoder.classes_: {label_encoder.classes_}")  # 调试信息
-
-            # 显示最终获取到的 label_encoder 状态
-            if label_encoder is not None:
-                st.success(f"✅ 成功获取到 label_encoder，类别: {list(label_encoder.classes_)}")
+                st.info(f"📌 使用 session_state 中的 label_encoder，类别数: {num_classes}")
             else:
-                st.warning("⚠️ 未能获取到 label_encoder，预测结果将显示编码")
+                st.warning("⚠️ 未找到 label_encoder，预测结果将显示编码")
 
-            # 尝试从原始数据获取特征名
-            if st.session_state.df is not None:
-                feature = st.session_state.df.columns[:-1].tolist()
-                st.info(f"📌 从数据中获取特征名: {feature}")
-            else:
-                # 从模型推断特征数
-                if hasattr(model, 'n_features_in_'):
-                    n_features = model.n_features_in_
-                elif hasattr(model, 'coef_'):
-                    n_features = len(model.coef_)
-                else:
-                    n_features = 6
-                feature = [f"特征_{i + 1}" for i in range(n_features)]
+            # 从 config 中获取特征名
+            if 'rf_config' in st.session_state and st.session_state.rf_config is not None:
+                config = st.session_state.rf_config
+                if 'feature' in config:
+                    feature = config['feature']
+                elif 'feature_names' in config:
+                    feature = config['feature_names']
 
             # 随机森林不需要scaler
             scaler = None
@@ -598,17 +560,17 @@ def predict_rf():
     # ===== 预测功能 =====
     st.markdown("### 🔮 使用模型预测")
     st.markdown("""
-                上传文件批量预测需注意：
-                - 1. 确保上传文件为：CSV或Excel
-                - 2. **特征列完整**：必须包含模型训练时的所有特征列（列名需与训练数据完全一致，大小写/空格敏感）；
-                - 3. **无缺失值**：特征列不能有空白单元格（NaN），需提前删除含缺失值的行或填充；
-                - 4. **数据类型正确**：
-                    - (1) 数值型特征（如面积、年龄）：仅保留纯数字（int/float），不含文本、特殊符号（如「120㎡」「二十岁」）；
-                    - (2)类别型特征（如性别、学历）：填写原始文本值（如「男/女」「本科/硕士」），**不要填写编码后的数字**；
-                - 5. **无需标签列**：预测文件仅需特征列，无需包含训练时的标签列（模型会自动生成预测结果）；
-                - 6. **编码一致**：类别特征的取值需与训练数据一致（如训练时「性别」只有「男/女」，预测时不能出现「未知」）。
+                        上传文件批量预测需注意：
+                        - 1. 确保上传文件为：CSV或Excel
+                        - 2. **特征列完整**：必须包含模型训练时的所有特征列（列名需与训练数据完全一致，大小写/空格敏感）；
+                        - 3. **无缺失值**：特征列不能有空白单元格（NaN），需提前删除含缺失值的行或填充；
+                        - 4. **数据类型正确**：
+                            - (1) 数值型特征（如面积、年龄）：仅保留纯数字（int/float），不含文本、特殊符号（如「120㎡」「二十岁」）；
+                            - (2)类别型特征（如性别、学历）：填写原始文本值（如「男/女」「本科/硕士」），**不要填写编码后的数字**；
+                        - 5. **无需标签列**：预测文件仅需特征列，无需包含训练时的标签列（模型会自动生成预测结果）；
+                        - 6. **编码一致**：类别特征的取值需与训练数据一致（如训练时「性别」只有「男/女」，预测时不能出现「未知」）。
 
-                ❗ 若预测报错，请按上述要求检查文件后重试（常见问题：列名不一致、含非数值字符、存在缺失值）。
+                        ❗ 若预测报错，请按上述要求检查文件后重试（常见问题：列名不一致、含非数值字符、存在缺失值）。
                             """)
 
     # 初始化session state
