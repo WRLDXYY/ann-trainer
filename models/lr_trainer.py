@@ -373,6 +373,24 @@ def train_lr():
                 solver = 'lbfgs'
                 st.warning(f"多分类问题需要lbfgs、newton-cg、sag或saga求解器，已自动调整为lbfgs")
 
+            # 在创建模型之前，确保multi_class参数正确
+            if num_classes > 2:
+                # 多分类问题
+                if multi_class not in ['multinomial', 'ovr']:
+                    multi_class = 'multinomial'
+                    st.warning("多分类问题，已自动设置为 'multinomial'")
+            else:
+                # 二分类问题，multi_class可以设置为'ovr'或'auto'
+                multi_class = 'ovr'
+
+            # 再次检查solver和penalty的组合（包括multi_class的限制）
+            if solver in ['liblinear'] and multi_class == 'multinomial':
+                solver = 'lbfgs'
+                st.warning("liblinear求解器不支持multinomial，已自动调整为lbfgs")
+            elif solver in ['sag', 'saga'] and num_classes > 2 and multi_class == 'ovr':
+                # sag/saga支持multinomial，但也可以用于ovr
+                pass
+
             model = LogisticRegression(
                 C=C_value,
                 penalty=penalty,
