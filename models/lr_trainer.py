@@ -360,6 +360,19 @@ def train_lr():
                 class_weight = 'balanced'
                 st.warning(f"class_weight值无效，已自动调整为 'balanced'")
 
+            if penalty == 'l1' and solver not in ['liblinear', 'saga']:
+                solver = 'liblinear'
+                st.warning(f"l1 penalty需要liblinear或saga求解器，已自动调整为liblinear")
+            elif penalty == 'elasticnet' and solver != 'saga':
+                solver = 'saga'
+                st.warning(f"elasticnet penalty需要saga求解器，已自动调整为saga")
+            elif penalty == 'none' and solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
+                solver = 'lbfgs'
+                st.warning(f"none penalty需要lbfgs、newton-cg、sag或saga求解器，已自动调整为lbfgs")
+            elif penalty == 'l2' and num_classes > 2 and solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
+                solver = 'lbfgs'
+                st.warning(f"多分类问题需要lbfgs、newton-cg、sag或saga求解器，已自动调整为lbfgs")
+
             model = LogisticRegression(
                 C=C_value,
                 penalty=penalty,
