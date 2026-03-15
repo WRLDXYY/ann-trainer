@@ -394,11 +394,13 @@ def predict_rf():
             # 1. 先从 rf_config 中获取
             if 'rf_config' in st.session_state and st.session_state.rf_config is not None:
                 config = st.session_state.rf_config
+                st.write(f"调试 - rf_config 内容: {config.keys()}")  # 调试信息
                 if 'label_encoder' in config:
                     label_encoder = config['label_encoder']
                     is_classification = True
                     num_classes = len(label_encoder.classes_) if label_encoder else None
                     st.info(f"📌 从配置中获取到分类信息，类别数: {num_classes}")
+                    st.write(f"调试 - label_encoder.classes_: {label_encoder.classes_}")  # 调试信息
 
             # 2. 如果上面没有，从通用的 label_encoder 获取
             if label_encoder is None and 'label_encoder' in st.session_state and st.session_state.label_encoder is not None:
@@ -406,6 +408,7 @@ def predict_rf():
                 is_classification = True
                 num_classes = len(label_encoder.classes_)
                 st.info(f"📌 检测到分类问题，类别数: {num_classes}")
+                st.write(f"调试 - 通用 label_encoder.classes_: {label_encoder.classes_}")  # 调试信息
 
             # 3. 如果还是没有，尝试从数据推断
             if label_encoder is None and st.session_state.df is not None:
@@ -415,6 +418,13 @@ def predict_rf():
                     is_classification = True
                     num_classes = len(label_encoder.classes_)
                     st.info(f"📌 从原始数据中获取到分类信息，类别数: {num_classes}")
+                    st.write(f"调试 - 数据 label_encoder.classes_: {label_encoder.classes_}")  # 调试信息
+
+            # 显示最终获取到的 label_encoder 状态
+            if label_encoder is not None:
+                st.success(f"✅ 成功获取到 label_encoder，类别: {list(label_encoder.classes_)}")
+            else:
+                st.warning("⚠️ 未能获取到 label_encoder，预测结果将显示编码")
 
             # 尝试从原始数据获取特征名
             if st.session_state.df is not None:
@@ -650,7 +660,7 @@ def predict_rf():
                 input_values.append(val)
                 input_display.append(f"{val}")
 
-        # 预测按钮用当前计数器
+        # 预测按钮部分
         if st.button("🚀 开始预测", type="primary", use_container_width=True,
                      key=f"rf_predict_btn_{current_counter}"):
             try:
@@ -658,18 +668,27 @@ def predict_rf():
                 pred = model.predict(input_arr)[0]
                 proba = model.predict_proba(input_arr)[0] if is_classification else None
 
+                st.write(f"调试 - 原始预测值: {pred}, 类型: {type(pred)}")  # 调试信息
+                st.write(f"调试 - label_encoder 是否存在: {label_encoder is not None}")  # 调试信息
+
                 # ✅ 如果是分类问题，将预测结果转译为原始文本
                 if is_classification and label_encoder is not None:
                     try:
                         pred_int = int(pred)
+                        st.write(f"调试 - 转换后的整数: {pred_int}")  # 调试信息
+                        st.write(f"调试 - label_encoder.classes_: {label_encoder.classes_}")  # 调试信息
                         if 0 <= pred_int < len(label_encoder.classes_):
                             pred_text = label_encoder.inverse_transform([pred_int])[0]
+                            st.write(f"调试 - 转译后的文本: {pred_text}")  # 调试信息
                         else:
                             pred_text = str(pred_int)
-                    except:
+                            st.write(f"调试 - 预测值超出范围，使用原始值: {pred_text}")  # 调试信息
+                    except Exception as e:
                         pred_text = str(pred)
+                        st.write(f"调试 - 转译出错: {e}")  # 调试信息
                 else:
                     pred_text = pred
+                    st.write(f"调试 - 未进行转译，使用原始值: {pred_text}")  # 调试信息
 
                 st.session_state.rf_pred_result = {
                     'input_display': input_display,
