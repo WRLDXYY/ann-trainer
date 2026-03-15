@@ -635,13 +635,13 @@ def predict_rf():
                     'prediction_text': pred_text,
                     'probabilities': proba
                 }
+                st.write(f"调试 - 刚刚保存的 rf_pred_result: {st.session_state.rf_pred_result}")
                 st.session_state.rf_show_prediction = True
                 st.session_state.rf_predict_counter += 1
                 st.rerun()
             except Exception as e:
                 st.error(f"❌ 预测出错：{str(e)}")
 
-        st.write(f"调试 - st.session_state.rf_pred_result 内容: {st.session_state.rf_pred_result}")
         # 显示预测结果
         if st.session_state.rf_show_prediction and st.session_state.rf_pred_result is not None:
             result = st.session_state.rf_pred_result
