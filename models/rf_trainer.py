@@ -387,10 +387,10 @@ def predict_rf():
 
             # 直接从 session_state 获取已经重建的 label_encoder
             if 'label_encoder' in st.session_state and st.session_state.label_encoder is not None:
-                label_encoder = st.session_state.label_encoder
-                is_classification = True
-                num_classes = len(label_encoder.classes_)
-                st.info(f"📌 使用 session_state 中的 label_encoder，类别数: {num_classes}")
+                # 不需要重新赋值给局部变量，直接使用 st.session_state 中的值
+                st.session_state.is_classification = True
+                st.session_state.num_classes = len(st.session_state.label_encoder.classes_)
+                st.info(f"📌 使用 session_state 中的 label_encoder，类别数: {st.session_state.num_classes}")
             else:
                 st.warning("⚠️ 未找到 label_encoder，预测结果将显示编码")
 
