@@ -300,13 +300,39 @@ def train_lr():
             else:
                 multi_class = 'ovr'
 
+            # 在创建模型之前添加参数检查
+            try:
+                # 确保C是正数
+                C_value = float(C)
+                if C_value <= 0:
+                    C_value = 1.0
+                    st.warning(f"C值 {C} 无效，已自动调整为 1.0")
+            except:
+                C_value = 1.0
+                st.warning(f"C值格式错误，已自动调整为 1.0")
+
+            # 确保max_iter是正整数
+            try:
+                max_iter_value = int(max_iter)
+                if max_iter_value <= 0:
+                    max_iter_value = 100
+                    st.warning(f"最大迭代次数 {max_iter} 无效，已自动调整为 100")
+            except:
+                max_iter_value = 100
+                st.warning(f"最大迭代次数格式错误，已自动调整为 100")
+
+            # 确保class_weight合法
+            if class_weight is not None and class_weight not in ['balanced', None]:
+                class_weight = 'balanced'
+                st.warning(f"class_weight值无效，已自动调整为 'balanced'")
+
             model = LogisticRegression(
-                C=float(C),
+                C=C_value,
                 penalty=penalty,
                 solver=solver,
-                max_iter=int(max_iter),
+                max_iter=max_iter_value,
                 multi_class=multi_class,
-                class_weight=class_weight,  # ✅ 添加 class_weight 参数
+                class_weight=class_weight,
                 random_state=42,
                 n_jobs=-1
             )
@@ -619,17 +645,18 @@ def predict_lr():
     st.markdown("### 🔮 使用模型预测")
     st.markdown("""
                     上传文件批量预测需注意：
-                    - 1. 确保上传文件为：CSV或Excel
-                    - 2. **特征列完整**：必须包含模型训练时的所有特征列（列名需与训练数据完全一致，大小写/空格敏感）；
-                    - 3. **无缺失值**：特征列不能有空白单元格（NaN），需提前删除含缺失值的行或填充；
-                    - 4. **数据类型正确**：
-                       - (1) 数值型特征（如面积、年龄）：仅保留纯数字（int/float），不含文本、特殊符号（如「120㎡」「二十岁」）；
-                       - (2)类别型特征（如性别、学历）：填写原始文本值（如「男/女」「本科/硕士」），**不要填写编码后的数字**；
-                    - 5. **无需标签列**：预测文件仅需特征列，无需包含训练时的标签列（模型会自动生成预测结果）；
-                    - 6. **编码一致**：类别特征的取值需与训练数据一致（如训练时「性别」只有「男/女」，预测时不能出现「未知」）。
+                    1.确保上传文件为：CSV或Excel
+                    2. **特征列完整**：必须包含模型训练时的所有特征列（列名需与训练数据完全一致，大小写/空格敏感）；
+                    3. **无缺失值**：特征列不能有空白单元格（NaN），需提前删除含缺失值的行或填充；
+                    4. **数据类型正确**：
+                       (1) 数值型特征（如面积、年龄）：仅保留纯数字（int/float），不含文本、特殊符号（如「120㎡」「二十岁」）；
+                       (2)类别型特征（如性别、学历）：填写原始文本值（如「男/女」「本科/硕士」），**不要填写编码后的数字**；
+                    5. **无需标签列**：预测文件仅需特征列，无需包含训练时的标签列（模型会自动生成预测结果）；
+                    6. **编码一致**：类别特征的取值需与训练数据一致（如训练时「性别」只有「男/女」，预测时不能出现「未知」）。
 
                     ❗ 若预测报错，请按上述要求检查文件后重试（常见问题：列名不一致、含非数值字符、存在缺失值）。
                     """)
+
     # 初始化session state
     if 'lr_show_prediction' not in st.session_state:
         st.session_state.lr_show_prediction = False
