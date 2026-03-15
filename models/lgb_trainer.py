@@ -174,17 +174,17 @@ def train_lgb():
         st.success("✨ 已应用AI建议的参数，你可以直接点击训练")
 
         # 读取建议值，如果没有则用默认值
-        default_n_estimators = suggested.get('n_estimators', 100)
-        default_learning_rate = suggested.get('learning_rate', 0.1)
-        default_max_depth = suggested.get('max_depth', -1)
-        default_num_leaves = suggested.get('num_leaves', 31)
-        default_min_child_samples = suggested.get('min_child_samples', 20)
-        default_subsample = suggested.get('subsample', 1.0)
-        default_colsample = suggested.get('colsample_bytree', 1.0)
-        default_reg_alpha = suggested.get('reg_alpha', 0.0)
-        default_reg_lambda = suggested.get('reg_lambda', 0.0)
-        default_min_split_gain = suggested.get('min_split_gain', 0.0)
-        default_test_size = suggested.get('test_size', 20)
+        default_n_estimators = int(suggested.get('n_estimators', 100))
+        default_learning_rate = float(suggested.get('learning_rate', 0.1))
+        default_max_depth = int(suggested.get('max_depth', -1))
+        default_num_leaves = int(suggested.get('num_leaves', 31))
+        default_min_child_samples = int(suggested.get('min_child_samples', 20))
+        default_subsample = float(suggested.get('subsample', 1.0))
+        default_colsample = float(suggested.get('colsample_bytree', 1.0))
+        default_reg_alpha = float(suggested.get('reg_alpha', 0.0))
+        default_reg_lambda = float(suggested.get('reg_lambda', 0.0))
+        default_min_split_gain = float(suggested.get('min_split_gain', 0.0))
+        default_test_size = int(suggested.get('test_size', 20))
 
     else:
         default_n_estimators = 100
