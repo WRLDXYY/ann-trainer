@@ -611,43 +611,28 @@ def predict_rf():
 
         # 预测按钮部分
         if st.button("🚀 开始预测", type="primary", use_container_width=True,
-                     key=f"rf_predict_btn_{current_counter}"):
+                     key=f"lr_predict_btn_{current_counter}"):
             try:
                 input_arr = np.array(input_values).reshape(1, -1)
-                pred = model.predict(input_arr)[0]
-                proba = model.predict_proba(input_arr)[0] if is_classification else None
 
-                st.write(f"调试 - 原始预测值: {pred}, 类型: {type(pred)}")  # 调试信息
-                st.write(f"调试 - label_encoder 是否存在: {label_encoder is not None}")  # 调试信息
-
-                # ✅ 如果是分类问题，将预测结果转译为原始文本
-                if is_classification and label_encoder is not None:
-                    try:
-                        pred_int = int(pred)
-                        st.write(f"调试 - 转换后的整数: {pred_int}")  # 调试信息
-                        st.write(f"调试 - label_encoder.classes_: {label_encoder.classes_}")  # 调试信息
-                        if 0 <= pred_int < len(label_encoder.classes_):
-                            pred_text = label_encoder.inverse_transform([pred_int])[0]
-                            st.write(f"调试 - 转译后的文本: {pred_text}")  # 调试信息
-                        else:
-                            pred_text = str(pred_int)
-                            st.write(f"调试 - 预测值超出范围，使用原始值: {pred_text}")  # 调试信息
-                    except Exception as e:
-                        pred_text = str(pred)
-                        st.write(f"调试 - 转译出错: {e}")  # 调试信息
+                # 最简单的修复：如果scaler存在就用，不存在就直接预测
+                if scaler is not None:
+                    input_scaled = scaler.transform(input_arr)
+                    pred = model.predict(input_scaled)
+                    proba = model.predict_proba(input_scaled)
                 else:
-                    pred_text = pred
-                    st.write(f"调试 - 未进行转译，使用原始值: {pred_text}")  # 调试信息
+                    pred = model.predict(input_arr)
+                    proba = model.predict_proba(input_arr)
+                    st.info("ℹ️ 使用原始数据预测（如训练时未标准化则正常）")
 
-                st.session_state.rf_pred_result = {
+                st.session_state.lr_pred_result = {
                     'input_display': input_display,
                     'features': feature,
-                    'prediction': pred,
-                    'prediction_text': pred_text,  # 保存转译后的文本
-                    'probabilities': proba
+                    'prediction': pred[0],
+                    'probabilities': proba[0]
                 }
-                st.session_state.rf_show_prediction = True
-                st.session_state.rf_predict_counter += 1
+                st.session_state.lr_show_prediction = True
+                st.session_state.lr_predict_counter += 1
                 st.rerun()
             except Exception as e:
                 st.error(f"❌ 预测出错：{str(e)}")
@@ -815,3 +800,4 @@ def predict_rf():
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
+            
