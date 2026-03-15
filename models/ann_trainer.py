@@ -290,22 +290,27 @@ def train_ann():
         st.session_state.y_test = y_test
         st.session_state.y_test_original = y_test_original
 
-        # 构建模型
+        # 构建模型 - 添加类型转换
         model = tf.keras.Sequential()
         model.add(tf.keras.layers.Input(shape=(X_train_scaled.shape[1],)))
+
+        # 确保整数类型
+        hidden_layers = int(hidden_layers)
+        neurons_per_layer = int(neurons_per_layer)
 
         for _ in range(hidden_layers):
             model.add(tf.keras.layers.Dense(neurons_per_layer, activation=activation))
             if dropout_rate > 0:
                 model.add(tf.keras.layers.Dropout(dropout_rate))
 
+        # 输出层
         if is_classification:
             if num_classes == 2:
                 model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
                 loss = 'binary_crossentropy'
                 metric = 'accuracy'
             else:
-                model.add(tf.keras.layers.Dense(num_classes, activation='softmax'))
+                model.add(tf.keras.layers.Dense(int(num_classes), activation='softmax'))  # 确保是int
                 loss = 'categorical_crossentropy'
                 metric = 'accuracy'
         else:
@@ -313,12 +318,19 @@ def train_ann():
             loss = 'mse'
             metric = 'mae'
 
+        # 优化器 - 确保学习率是float
+        learning_rate = float(learning_rate)
         if optimizer_choice == "Adam":
             optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
         else:
             optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=0.9)
 
+        # 编译模型
         model.compile(optimizer=optimizer, loss=loss, metrics=[metric])
+
+        # 训练参数 - 确保是整数
+        epochs = int(epochs)
+        batch_size = int(batch_size)
 
         # Class Weight处理
         class_weight_dict = None
