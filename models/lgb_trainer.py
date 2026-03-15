@@ -340,6 +340,19 @@ def train_lgb():
             X_train_scaled = X_train
             X_test_scaled = X_test
 
+        # ✅ 添加 Class Weight 处理
+        class_weight = None
+        if is_classification and st.session_state.user_choices.get('balance') == 'class_weight':
+            try:
+                # 计算样本权重
+                from sklearn.utils.class_weight import compute_class_weight
+                classes = np.unique(y_train)
+                weights = compute_class_weight('balanced', classes=classes, y=y_train)
+                class_weight = dict(zip(classes, weights))
+                st.info(f"📊 应用Class Weight：{class_weight}")
+            except Exception as e:
+                st.warning(f"Class Weight计算失败：{str(e)}")
+
         # 创建模型
         with st.spinner("模型训练中..."):
             start_time = time.time()
@@ -357,32 +370,33 @@ def train_lgb():
                 metric = 'l2'
 
             model = lgb.LGBMClassifier(
-                n_estimators=n_estimators,
-                learning_rate=learning_rate,
-                max_depth=max_depth if max_depth != -1 else -1,
-                num_leaves=num_leaves,
-                min_child_samples=min_child_samples,
-                subsample=subsample,
-                colsample_bytree=colsample_bytree,
-                reg_alpha=reg_alpha,
-                reg_lambda=reg_lambda,
-                min_split_gain=min_split_gain,
+                n_estimators=int(n_estimators),
+                learning_rate=float(learning_rate),
+                max_depth=int(max_depth) if max_depth != -1 else -1,
+                num_leaves=int(num_leaves),
+                min_child_samples=int(min_child_samples),
+                subsample=float(subsample),
+                colsample_bytree=float(colsample_bytree),
+                reg_alpha=float(reg_alpha),
+                reg_lambda=float(reg_lambda),
+                min_split_gain=float(min_split_gain),
                 objective=objective,
                 metric=metric,
+                class_weight=class_weight,  # ✅ 添加 class_weight 参数
                 random_state=42,
                 n_jobs=-1,
                 verbose=-1
             ) if is_classification else lgb.LGBMRegressor(
-                n_estimators=n_estimators,
-                learning_rate=learning_rate,
-                max_depth=max_depth if max_depth != -1 else -1,
-                num_leaves=num_leaves,
-                min_child_samples=min_child_samples,
-                subsample=subsample,
-                colsample_bytree=colsample_bytree,
-                reg_alpha=reg_alpha,
-                reg_lambda=reg_lambda,
-                min_split_gain=min_split_gain,
+                n_estimators=int(n_estimators),
+                learning_rate=float(learning_rate),
+                max_depth=int(max_depth) if max_depth != -1 else -1,
+                num_leaves=int(num_leaves),
+                min_child_samples=int(min_child_samples),
+                subsample=float(subsample),
+                colsample_bytree=float(colsample_bytree),
+                reg_alpha=float(reg_alpha),
+                reg_lambda=float(reg_lambda),
+                min_split_gain=float(min_split_gain),
                 objective=objective,
                 metric=metric,
                 random_state=42,
