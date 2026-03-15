@@ -533,17 +533,7 @@ def predict_rf():
                 st.error(f"❌ 模型保存失败：{str(e)}")
 
         with col2:
-            # 创建一个可序列化的配置副本
-            serializable_config = {}
-            for key, value in config.items():
-                if hasattr(value, 'tolist'):  # 如果是 numpy 数组
-                    serializable_config[key] = value.tolist()
-                elif hasattr(value, 'item'):  # 如果是 numpy 数值
-                    serializable_config[key] = value.item()
-                else:
-                    serializable_config[key] = value
-
-            config_json = json.dumps(serializable_config, indent=2, ensure_ascii=False)
+            config_json = json.dumps(config, default=str, indent=2, ensure_ascii=False)
             st.download_button(
                 label="📄 下载配置 (.json)",
                 data=config_json,
