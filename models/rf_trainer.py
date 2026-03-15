@@ -380,6 +380,13 @@ def predict_rf():
             model = st.session_state.uploaded_model
             st.info("📌 使用上传的随机森林模型进行预测")
 
+            # 从 session_state 获取 label_encoder
+            if 'label_encoder' in st.session_state and st.session_state.label_encoder is not None:
+                # 直接设置 session_state 变量
+                st.session_state.is_classification = True
+                st.session_state.num_classes = len(st.session_state.label_encoder.classes_)
+                st.info(f"📌 获取到 label_encoder，类别数: {st.session_state.num_classes}")
+
             # 获取特征名
             if st.session_state.df is not None:
                 feature = st.session_state.df.columns[:-1].tolist()
@@ -408,9 +415,26 @@ def predict_rf():
 
     # 获取必要的 session state 变量
     label_encoders = st.session_state.label_encoders if 'label_encoders' in st.session_state else {}
-    label_encoder = st.session_state.get('label_encoder', None)
-    is_classification = st.session_state.get('is_classification', False)
-    num_classes = st.session_state.get('num_classes', None)
+
+    # 对于上传的模型，优先使用 st.session_state.label_encoder
+    if 'uploaded_model' in st.session_state and st.session_state.get('uploaded_model_type') == 'rf':
+        label_encoder = st.session_state.get('label_encoder', None)
+        if label_encoder is not None:
+            is_classification = True
+            num_classes = len(label_encoder.classes_)
+            # 同时也设置到 session_state 中，方便后续使用
+            st.session_state.is_classification = True
+            st.session_state.num_classes = num_classes
+        else:
+            label_encoder = st.session_state.get('label_encoder', None)
+            is_classification = st.session_state.get('is_classification', False)
+            num_classes = st.session_state.get('num_classes', None)
+    else:
+        # 对于训练得到的模型，从原有变量获取
+        label_encoder = st.session_state.get('label_encoder', None)
+        is_classification = st.session_state.get('is_classification', False)
+        num_classes = st.session_state.get('num_classes', None)
+
 
     # 显示配置信息
     if config is not None:
@@ -502,6 +526,14 @@ def predict_rf():
         col1, col2 = st.columns(2)
         with col1:
             try:
+                # 确保 label_encoder 被正确保存
+                label_encoder = st.session_state.get('label_encoder', None)
+                if label_encoder is None and 'label_encoders' in st.session_state:
+                    # 尝试从 label_encoders 获取目标列的编码器
+                    target_col = config.get('target')
+                    if target_col and target_col in st.session_state.label_encoders:
+                        label_encoder = st.session_state.label_encoders[target_col]
+
                 model_package = {
                     'model': st.session_state.rf_model,
                     'scaler': None,
@@ -618,28 +650,15 @@ def predict_rf():
 
                 # 转译预测结果
                 pred_text = pred
-                st.write(f"调试 - 原始 pred: {pred}, 类型: {type(pred)}")  # 添加
-                st.write(f"调试 - is_classification: {is_classification}")  # 添加
-                st.write(f"调试 - label_encoder 是否存在: {label_encoder is not None}")  # 添加
-
                 if is_classification and label_encoder is not None:
                     try:
                         pred_int = int(pred)
-                        st.write(f"调试 - pred_int: {pred_int}")  # 添加
-                        st.write(f"调试 - label_encoder.classes_: {label_encoder.classes_}")  # 添加
                         if 0 <= pred_int < len(label_encoder.classes_):
                             pred_text = label_encoder.inverse_transform([pred_int])[0]
-                            st.write(f"调试 - 转译成功: {pred_text}")  # 添加
                         else:
                             pred_text = str(pred_int)
-                            st.write(f"调试 - 超出范围: {pred_text}")  # 添加
-                    except Exception as e:
+                    except:
                         pred_text = str(pred)
-                        st.write(f"调试 - 转译出错: {e}")  # 添加
-                else:
-                    st.write("调试 - 未进入转译分支")  # 添加
-
-                st.write(f"调试 - 最终 pred_text: {pred_text}")  # 添加
 
                 st.session_state.rf_pred_result = {
                     'input_display': input_display,
@@ -648,7 +667,6 @@ def predict_rf():
                     'prediction_text': pred_text,
                     'probabilities': proba
                 }
-                st.write(f"调试 - 刚刚保存的 rf_pred_result: {st.session_state.rf_pred_result}")
                 st.session_state.rf_show_prediction = True
                 st.session_state.rf_predict_counter += 1
                 st.rerun()
