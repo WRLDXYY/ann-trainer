@@ -409,6 +409,10 @@ def predict_rf():
     # 获取必要的 session state 变量
     label_encoders = st.session_state.label_encoders if 'label_encoders' in st.session_state else {}
     label_encoder = st.session_state.get('label_encoder', None)
+    st.write(f"调试 - label_encoder 是否存在: {label_encoder is not None}")
+    if label_encoder is not None:
+        st.write(f"调试 - label_encoder.classes_: {label_encoder.classes_}")
+        st.write(f"调试 - label_encoder 类型: {type(label_encoder)}")
     is_classification = st.session_state.get('is_classification', False)
     num_classes = st.session_state.get('num_classes', None)
 
