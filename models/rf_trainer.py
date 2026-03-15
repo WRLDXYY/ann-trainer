@@ -618,15 +618,28 @@ def predict_rf():
 
                 # 转译预测结果
                 pred_text = pred
+                st.write(f"调试 - 原始 pred: {pred}, 类型: {type(pred)}")  # 添加
+                st.write(f"调试 - is_classification: {is_classification}")  # 添加
+                st.write(f"调试 - label_encoder 是否存在: {label_encoder is not None}")  # 添加
+
                 if is_classification and label_encoder is not None:
                     try:
                         pred_int = int(pred)
+                        st.write(f"调试 - pred_int: {pred_int}")  # 添加
+                        st.write(f"调试 - label_encoder.classes_: {label_encoder.classes_}")  # 添加
                         if 0 <= pred_int < len(label_encoder.classes_):
                             pred_text = label_encoder.inverse_transform([pred_int])[0]
+                            st.write(f"调试 - 转译成功: {pred_text}")  # 添加
                         else:
                             pred_text = str(pred_int)
-                    except:
+                            st.write(f"调试 - 超出范围: {pred_text}")  # 添加
+                    except Exception as e:
                         pred_text = str(pred)
+                        st.write(f"调试 - 转译出错: {e}")  # 添加
+                else:
+                    st.write("调试 - 未进入转译分支")  # 添加
+
+                st.write(f"调试 - 最终 pred_text: {pred_text}")  # 添加
 
                 st.session_state.rf_pred_result = {
                     'input_display': input_display,
