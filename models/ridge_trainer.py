@@ -257,7 +257,7 @@ def train_ridge():
                 alphas = [float(a.strip()) for a in cv_alphas.split(',')]
                 model = RidgeCV(alphas=alphas, store_cv_results=True)
             else:
-                model = Ridge(alpha=alpha, solver=solver)
+                model = Ridge(alpha=float(alpha), solver=solver)
 
             # 训练
             model.fit(X_train_scaled, y_train)
