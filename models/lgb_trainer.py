@@ -512,22 +512,26 @@ def predict_lgb():
             model = st.session_state.uploaded_model
             st.info("📌 使用上传的LightGBM模型进行预测")
 
-            # ✅ 修改：从上传的模型获取scaler
-            scaler = st.session_state.get('lgb_scaler', st.session_state.get('uploaded_scaler', None))
+            # 从 session_state 获取 label_encoder
+            if 'label_encoder' in st.session_state and st.session_state.label_encoder is not None:
+                # 直接设置 session_state 变量
+                st.session_state.is_classification = True
+                st.session_state.num_classes = len(st.session_state.label_encoder.classes_)
+                st.info(f"📌 获取到 label_encoder，类别数: {st.session_state.num_classes}")
 
-            # 尝试从原始数据获取特征名
+            # 获取特征名
             if st.session_state.df is not None:
                 feature = st.session_state.df.columns[:-1].tolist()
                 st.info(f"📌 从数据中获取特征名: {feature}")
             else:
-                # 从模型推断特征数
                 if hasattr(model, 'n_features_in_'):
                     n_features = model.n_features_in_
-                elif hasattr(model, 'coef_'):
-                    n_features = len(model.coef_)
                 else:
                     n_features = 6
                 feature = [f"特征_{i + 1}" for i in range(n_features)]
+
+            # ✅ 修改：优先使用 lgb_scaler
+            scaler = st.session_state.get('lgb_scaler', st.session_state.get('uploaded_scaler', None))
         else:
             st.warning("请先训练模型或上传LightGBM模型文件")
             if st.button("返回训练"):
@@ -541,12 +545,27 @@ def predict_lgb():
             st.rerun()
         return
 
-
     # 获取必要的 session state 变量
     label_encoders = st.session_state.label_encoders if 'label_encoders' in st.session_state else {}
-    label_encoder = st.session_state.get('label_encoder', None)
-    is_classification = st.session_state.get('is_classification', False)
-    num_classes = st.session_state.get('num_classes', None)
+
+    # 对于上传的模型，优先使用 st.session_state.label_encoder
+    if 'uploaded_model' in st.session_state and st.session_state.get('uploaded_model_type') == 'lgb':
+        label_encoder = st.session_state.get('label_encoder', None)
+        if label_encoder is not None:
+            is_classification = True
+            num_classes = len(label_encoder.classes_)
+            # 同时也设置到 session_state 中，方便后续使用
+            st.session_state.is_classification = True
+            st.session_state.num_classes = num_classes
+        else:
+            label_encoder = st.session_state.get('label_encoder', None)
+            is_classification = st.session_state.get('is_classification', False)
+            num_classes = st.session_state.get('num_classes', None)
+    else:
+        # 对于训练得到的模型，从原有变量获取
+        label_encoder = st.session_state.get('label_encoder', None)
+        is_classification = st.session_state.get('is_classification', False)
+        num_classes = st.session_state.get('num_classes', None)
 
     # 显示配置信息
     with st.expander("📋 当前模型配置", expanded=False):
@@ -705,18 +724,19 @@ def predict_lgb():
     # ===== 预测功能 =====
     st.markdown("### 🔮 使用模型预测")
     st.markdown("""
-                    上传文件批量预测需注意：
-                    - 1. 确保上传文件为：CSV或Excel
-                    - 2. **特征列完整**：必须包含模型训练时的所有特征列（列名需与训练数据完全一致，大小写/空格敏感）；
-                    - 3. **无缺失值**：特征列不能有空白单元格（NaN），需提前删除含缺失值的行或填充；
-                    - 4. **数据类型正确**：
-                       - (1) 数值型特征（如面积、年龄）：仅保留纯数字（int/float），不含文本、特殊符号（如「120㎡」「二十岁」）；
-                       - (2)类别型特征（如性别、学历）：填写原始文本值（如「男/女」「本科/硕士」），**不要填写编码后的数字**；
-                    - 5. **无需标签列**：预测文件仅需特征列，无需包含训练时的标签列（模型会自动生成预测结果）；
-                    - 6. **编码一致**：类别特征的取值需与训练数据一致（如训练时「性别」只有「男/女」，预测时不能出现「未知」）。
+                        上传文件批量预测需注意：
+                        - 1. 确保上传文件为：CSV或Excel
+                        - 2. **特征列完整**：必须包含模型训练时的所有特征列（列名需与训练数据完全一致，大小写/空格敏感）；
+                        - 3. **无缺失值**：特征列不能有空白单元格（NaN），需提前删除含缺失值的行或填充；
+                        - 4. **数据类型正确**：
+                           - (1) 数值型特征（如面积、年龄）：仅保留纯数字（int/float），不含文本、特殊符号（如「120㎡」「二十岁」）；
+                           - (2)类别型特征（如性别、学历）：填写原始文本值（如「男/女」「本科/硕士」），**不要填写编码后的数字**；
+                        - 5. **无需标签列**：预测文件仅需特征列，无需包含训练时的标签列（模型会自动生成预测结果）；
+                        - 6. **编码一致**：类别特征的取值需与训练数据一致（如训练时「性别」只有「男/女」，预测时不能出现「未知」）。
 
-                    ❗ 若预测报错，请按上述要求检查文件后重试（常见问题：列名不一致、含非数值字符、存在缺失值）。
-                    """)
+                        ❗ 若预测报错，请按上述要求检查文件后重试（常见问题：列名不一致、含非数值字符、存在缺失值）。
+                        """)
+
     # 初始化session state
     if 'lgb_show_prediction' not in st.session_state:
         st.session_state.lgb_show_prediction = False
