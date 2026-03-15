@@ -140,10 +140,10 @@ def train_ridge():
         suggested = st.session_state.ai_suggested_params
         st.success("✨ 已应用AI建议的参数，你可以直接点击训练")
 
-        default_alpha = suggested.get('alpha', 1.0)
-        default_normalize = suggested.get('normalize', True)
+        default_alpha = float(suggested.get('alpha', 1.0))
+        default_normalize = bool(suggested.get('normalize', True))
         default_solver = suggested.get('solver', 'auto')
-        default_test_size = suggested.get('test_size', 20)
+        default_test_size = int(suggested.get('test_size', 20))
     else:
         default_alpha = 1.0
         default_normalize = True
