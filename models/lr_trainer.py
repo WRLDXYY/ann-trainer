@@ -328,44 +328,30 @@ def train_lr():
         with st.spinner("模型训练中..."):
             start_time = time.time()
 
-            # 多分类自动处理
+            # 简化的参数设置
             if num_classes > 2:
-                # 多分类问题
+                # 多分类问题 - 使用默认设置
                 multi_class = 'multinomial'
-                # 多分类不能使用liblinear
-                if solver == 'liblinear':
+                # 确保使用支持多分类的求解器
+                if solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
                     solver = 'lbfgs'
-                    st.warning("多分类问题不支持liblinear求解器，已自动调整为lbfgs")
+                    st.warning(f"求解器 {solver} 不支持多分类，已自动调整为 lbfgs")
             else:
                 multi_class = 'ovr'
 
-            # 确保solver和penalty的组合合法
-            if penalty == 'l1':
-                if solver not in ['liblinear', 'saga']:
-                    solver = 'liblinear'
-                    st.warning("l1 penalty需要liblinear或saga求解器，已自动调整为liblinear")
-            elif penalty == 'elasticnet':
-                if solver != 'saga':
-                    solver = 'saga'
-                    st.warning("elasticnet penalty需要saga求解器，已自动调整为saga")
-            elif penalty == 'none':
-                if solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
-                    solver = 'lbfgs'
-                    st.warning("none penalty需要lbfgs、newton-cg、sag或saga求解器，已自动调整为lbfgs")
-            elif penalty == 'l2':
-                # l2是默认值，大多数求解器都支持
-                if num_classes > 2 and solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
-                    solver = 'lbfgs'
-                    st.warning("多分类问题需要lbfgs、newton-cg、sag或saga求解器，已自动调整为lbfgs")
-
-            # 确保solver和multi_class的组合合法
-            if solver == 'liblinear' and multi_class == 'multinomial':
+            # 确保penalty和solver组合合法
+            if penalty == 'l1' and solver not in ['liblinear', 'saga']:
+                solver = 'liblinear'
+                st.warning("l1 penalty需要使用 liblinear 或 saga，已自动调整为 liblinear")
+            elif penalty == 'elasticnet' and solver != 'saga':
+                solver = 'saga'
+                st.warning("elasticnet penalty需要使用 saga，已自动调整为 saga")
+            elif penalty == 'none' and solver not in ['lbfgs', 'newton-cg', 'sag', 'saga']:
                 solver = 'lbfgs'
-                st.warning("liblinear求解器不支持multinomial，已自动调整为lbfgs")
+                st.warning("none penalty需要使用 lbfgs、newton-cg、sag 或 saga，已自动调整为 lbfgs")
 
-            # 在创建模型之前添加参数检查
+            # 确保C值是正数
             try:
-                # 确保C是正数
                 C_value = float(C)
                 if C_value <= 0:
                     C_value = 1.0
@@ -393,20 +379,30 @@ def train_lr():
             st.info(
                 f"使用参数 - C: {C_value}, penalty: {penalty}, solver: {solver}, max_iter: {max_iter_value}, multi_class: {multi_class}")
 
-            model = LogisticRegression(
-                C=C_value,
-                penalty=penalty,
-                solver=solver,
-                max_iter=max_iter_value,
-                multi_class=multi_class,
-                class_weight=class_weight,
-                random_state=42,
-                n_jobs=-1
-            )
+            try:
+                model = LogisticRegression(
+                    C=C_value,
+                    penalty=penalty,
+                    solver=solver,
+                    max_iter=max_iter_value,
+                    multi_class=multi_class,
+                    class_weight=class_weight,
+                    random_state=42,
+                    n_jobs=-1
+                )
+            except Exception as e:
+                st.error(f"模型创建失败：{str(e)}")
+                st.stop()
 
             # 训练
-            model.fit(X_train_scaled, y_train)
+            try:
+                model.fit(X_train_scaled, y_train)
+            except Exception as e:
+                st.error(f"模型训练失败：{str(e)}")
+                st.stop()
+
             train_time = time.time() - start_time
+
 
             # 预测
             y_pred_train = model.predict(X_train_scaled)
