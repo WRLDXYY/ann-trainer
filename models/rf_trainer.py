@@ -394,13 +394,13 @@ def predict_rf():
             # 1. 先从 rf_config 中获取
             if 'rf_config' in st.session_state and st.session_state.rf_config is not None:
                 config = st.session_state.rf_config
-                st.write(f"调试 - rf_config 内容: {config.keys()}")  # 调试信息
+                #st.write(f"调试 - rf_config 内容: {config.keys()}")  # 调试信息
                 if 'label_encoder' in config:
                     label_encoder = config['label_encoder']
                     is_classification = True
                     num_classes = len(label_encoder.classes_) if label_encoder else None
                     st.info(f"📌 从配置中获取到分类信息，类别数: {num_classes}")
-                    st.write(f"调试 - label_encoder.classes_: {label_encoder.classes_}")  # 调试信息
+                    #st.write(f"调试 - label_encoder.classes_: {label_encoder.classes_}")  # 调试信息
 
             # 2. 如果上面没有，从通用的 label_encoder 获取
             if label_encoder is None and 'label_encoder' in st.session_state and st.session_state.label_encoder is not None:
